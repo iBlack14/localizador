@@ -759,6 +759,58 @@ img, video { display: block; max-width: 100%; }
 
 .btn-cookie:hover { opacity: 0.85; }
 
+/* ── Efectos Premium Añadidos ────────────────────────────────── */
+.info-card {
+  transition: all var(--transition) !important;
+  box-shadow: var(--shadow-card), 0 0 40px rgba(6,182,212,0.15);
+}
+
+.info-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-card), 0 0 60px rgba(59,130,246,0.25) !important;
+  background: rgba(255,255,255,0.08);
+}
+
+.btn-primary {
+  position: relative;
+  background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-cyan) 100%);
+  box-shadow: 0 0 30px rgba(59,130,246,0.4), 0 8px 32px rgba(59,130,246,0.2);
+  transition: all var(--transition);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 0 50px rgba(59,130,246,0.6), 0 12px 48px rgba(59,130,246,0.3);
+}
+
+.feature-card {
+  transition: all var(--transition);
+  position: relative;
+  overflow: hidden;
+}
+
+.feature-card::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -50%;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle, rgba(59,130,246,0.15) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity var(--transition);
+  pointer-events: none;
+}
+
+.feature-card:hover::before {
+  opacity: 1;
+}
+
+.feature-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 12px 60px rgba(59,130,246,0.2);
+}
+
 /* ── Responsive ─────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .nav-links { display: none; }
