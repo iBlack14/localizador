@@ -626,6 +626,19 @@ img, video { display: block; max-width: 100%; }
   color: var(--text-muted);
 }
 
+/* ── Initial Loader ────────────────────────────────────────── */
+.initial-loader {
+  position: fixed; inset: 0; z-index: 9999;
+  background: var(--bg-primary);
+  display: flex; align-items: center; justify-content: center;
+  transition: opacity 0.8s ease-out, visibility 0.8s ease-out;
+}
+
+.initial-loader.hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
 /* ── Modal ──────────────────────────────────────────────────── */
 .modal-overlay {
   position: fixed; inset: 0; z-index: 999;
