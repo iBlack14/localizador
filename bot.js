@@ -34,6 +34,7 @@ let visitCount = 0;
 let startTime = new Date();
 let isPolling = false;  // ✅ Bandera para evitar polling duplicado
 let conflictCount = 0;  // Contador de conflictos consecutivos
+let lastConflictTime = 0;  // Timestamp del último conflicto
 
 // Base de datos en memoria para asociar Links con Usuarios
 // Formato: { "V-123456": "ID_DEL_CHAT_DEL_USUARIO" }
@@ -412,7 +413,7 @@ app.post('/api/log', (req, res) => {
 async function poll() {
     // ✅ Evitar polling duplicado
     if (isPolling) {
-        console.warn('⚠️  Ya hay un polling en curso. Saltando iteración.')
+        setTimeout(poll, 500);
         return;
     }
     
@@ -423,18 +424,27 @@ async function poll() {
         // ✅ Detectar error de conflicto específico
         if (data && data.description && data.description.includes('Conflict') && data.description.includes('getUpdates')) {
             conflictCount++;
-            console.error(`🔴 [CONFLICTO ${conflictCount}] Otra instancia está usando polling. Deteniendo...`);
-            if (conflictCount >= 3) {
-                console.error('❌ Conflicto persistente. Deteniendo bot para evitar interferencia.');
-                process.exit(1);
-            }
-            // Esperar más antes de reintentar
-            setTimeout(poll, 2000 * conflictCount);
+            lastConflictTime = Date.now();
+            
+            // Calcular tiempo de espera con backoff exponencial + jitter
+            const baseDelay = Math.min(1000 * Math.pow(2, conflictCount - 1), 30000); // Max 30s
+            const jitter = Math.random() * 5000; // 0-5s de variación
+            const waitTime = baseDelay + jitter;
+            
+            console.error(`\n🔴 [CONFLICTO ${conflictCount}] Otra instancia está usando polling.`);
+            console.error(`⏳ Esperando ${Math.round(waitTime / 1000)}s antes de reintentar...`);
+            console.error(`💡 NOTA: Detén la otra instancia del bot para que esta pueda conectarse.\n`);
+            
+            isPolling = false;
+            setTimeout(poll, waitTime);
             return;
         }
         
         // Reiniciar contador si se conectó exitosamente
-        conflictCount = 0;
+        if (conflictCount > 0) {
+            console.log(`✅ Conflicto resuelto. Instancia anterior se ha desconectado.`);
+            conflictCount = 0;
+        }
         
         if (data && data.result && data.result.length > 0) {
             // Actualizamos el offset inmediatamente para evitar procesar los mismos mensajes otra vez
@@ -462,6 +472,13 @@ async function main() {
     if (!me?.ok) {
         console.error('❌ Error de conexión con Telegram.');
         process.exit(1);
+    }
+
+    console.log(`\n📡 Limpiando webhooks antigos...`);
+    // ✅ Elimina cualquier webhook anterior para asegurar que solo polling está activo
+    const deleteWebhook = await apiFetch('deleteWebhook', { drop_pending_updates: true });
+    if (deleteWebhook?.ok) {
+        console.log(`✅ Webhooks limpiados\n`);
     }
 
     // ✅ Manejar terminación limpia
