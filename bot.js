@@ -32,6 +32,8 @@ const BASE_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
 let offset = 0;
 let visitCount = 0;
 let startTime = new Date();
+let isPolling = false;  // ✅ Bandera para evitar polling duplicado
+let conflictCount = 0;  // Contador de conflictos consecutivos
 
 // Base de datos en memoria para asociar Links con Usuarios
 // Formato: { "V-123456": "ID_DEL_CHAT_DEL_USUARIO" }
@@ -408,8 +410,32 @@ app.post('/api/log', (req, res) => {
    POLLING LOOP (Comandos del Bot)
    ==================================================== */
 async function poll() {
+    // ✅ Evitar polling duplicado
+    if (isPolling) {
+        console.warn('⚠️  Ya hay un polling en curso. Saltando iteración.')
+        return;
+    }
+    
+    isPolling = true;
     try {
         const data = await apiFetch('getUpdates', { offset, timeout: 15, allowed_updates: ['message'] });
+        
+        // ✅ Detectar error de conflicto específico
+        if (data && data.description && data.description.includes('Conflict') && data.description.includes('getUpdates')) {
+            conflictCount++;
+            console.error(`🔴 [CONFLICTO ${conflictCount}] Otra instancia está usando polling. Deteniendo...`);
+            if (conflictCount >= 3) {
+                console.error('❌ Conflicto persistente. Deteniendo bot para evitar interferencia.');
+                process.exit(1);
+            }
+            // Esperar más antes de reintentar
+            setTimeout(poll, 2000 * conflictCount);
+            return;
+        }
+        
+        // Reiniciar contador si se conectó exitosamente
+        conflictCount = 0;
+        
         if (data && data.result && data.result.length > 0) {
             // Actualizamos el offset inmediatamente para evitar procesar los mismos mensajes otra vez
             offset = data.result[data.result.length - 1].update_id + 1;
@@ -420,7 +446,12 @@ async function poll() {
                 }
             }
         }
-    } catch (e) { } finally { setTimeout(poll, 500); }
+    } catch (e) {
+        console.error('[POLL ERROR]', e.message);
+    } finally {
+        isPolling = false;
+        setTimeout(poll, 500);
+    }
 }
 
 /* ====================================================
@@ -432,6 +463,16 @@ async function main() {
         console.error('❌ Error de conexión con Telegram.');
         process.exit(1);
     }
+
+    // ✅ Manejar terminación limpia
+    process.on('SIGINT', async () => {
+        console.log('\n\n🛑 Deteniendo bot...');
+        isPolling = true; // Detener el polling
+        try {
+            await sendMessage(ADMIN_CHAT_ID, `🔴 <b>SecureTrack Pro — Desconectado</b>`);
+        } catch (_) { }
+        process.exit(0);
+    });
 
     // Iniciar Express Server
     app.listen(PORT, () => {
