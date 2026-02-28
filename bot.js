@@ -176,7 +176,7 @@ Hola <b>${from}</b>! Bienvenido.
 👇 <b>Enlace Corto:</b>
 <code>${shortUrl}</code>
 
-👇 <b>Enlace Directo (Tu Dominio):</b>
+👇 <b>Enlace Directo :</b>
 <code>${longUrl}</code>
 
 <i>El sistema notificará solo a USTED cuando sea abierto.</i>`
