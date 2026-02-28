@@ -118,11 +118,12 @@ function buildTrackingUrl(targetId) {
    ==================================================== */
 async function handleCommand(msg) {
     const chatId = String(msg.chat.id);
-    const text = (msg.text || '').trim();
+    const textRaw = (msg.text || '').trim();
+    const text = textRaw.toLowerCase();
     const from = msg.from?.first_name || 'Usuario';
 
     // MOSTRAR CHAT_ID PARA DEBUGGING
-    console.log(`\n[📨 MENSAJE RECIBIDO]\n👤 Usuario: ${from}\n🔑 CHAT_ID: ${chatId}\n💬 Texto: ${text}\n`);
+    console.log(`\n[📨 MENSAJE RECIBIDO]\n👤 Usuario: ${from}\n🔑 CHAT_ID: ${chatId}\n💬 Texto: ${textRaw}\n`);
 
     // Opcional: Si quieres que solo el admin pueda usarlo, descomenta esto:
     // if (chatId !== ADMIN_CHAT_ID) return;
@@ -146,7 +147,8 @@ Hola <b>${from}</b>! Bienvenido.
         /* ── /gps y /link ──────────────────────────────── */
     } else if (text === '/gps' || text.startsWith('/gps ') || text === '/link' || text.startsWith('/link ')) {
 
-        let target = text.split(' ').slice(1).join(' ').trim();
+        // Extraer el target usando el texto original para no perder mayúsculas en el ID ingresado
+        let target = textRaw.split(' ').slice(1).join(' ').trim();
         if (!target) {
             // Genera ID más corto y legible: VA1B, VX2C, etc.
             target = `V${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
