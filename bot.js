@@ -357,6 +357,15 @@ ${flag} País:          ${g.country} (${g.countryCode})
     const msgResult = await sendMessage(ownerChatId, messageHtml);
     if (msgResult?.ok) {
         console.log(`[✅ MENSAJE ENVIADO] A chat ${ownerChatId}`);
+
+        // Enviar Google Maps en otro mensaje si hay coordenadas válidas
+        if (g.lat && g.lon && g.lat !== 'N/A' && g.lon !== 'N/A') {
+            const mapsUrl = `https://www.google.com/maps?q=${g.lat},${g.lon}`;
+            const mapsMessage = `📍 <b>Ubicación en Google Maps:</b>\n${mapsUrl}`;
+            await sendMessage(ownerChatId, mapsMessage);
+            console.log(`[📍 MAPS ENVIADO] Enlace adjunto enviado a ${ownerChatId}`);
+        }
+
     } else {
         console.error(`[❌ FALLO AL ENVIAR] A chat ${ownerChatId} | Respuesta:`, msgResult);
     }
