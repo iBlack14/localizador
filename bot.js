@@ -10,15 +10,23 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 
-const BOT_TOKEN = '8746785573:AAEnt4gMMRPZLgiqPhuNncH9k0Y_6T3FtZs';
-const ADMIN_CHAT_ID = '7657446462'; // ✅ Tu ID de Telegram
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID; // ✅ Tu ID de Telegram
 
 // Configuración del servidor
 const PORT = Number(process.env.PORT) || 8080;
-const RAW_PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
+const RAW_PUBLIC_BASE_URL =
+    process.env.PUBLIC_BASE_URL ||
+    process.env.RAILWAY_PUBLIC_DOMAIN ||
+    `http://localhost:${PORT}`;
 const WEBSITE_URL = /^https?:\/\//i.test(RAW_PUBLIC_BASE_URL)
     ? RAW_PUBLIC_BASE_URL.replace(/\/+$/, '')
     : `https://${RAW_PUBLIC_BASE_URL.replace(/\/+$/, '')}`;
+
+if (!BOT_TOKEN || !ADMIN_CHAT_ID) {
+    console.error('❌ Faltan variables de entorno: BOT_TOKEN y ADMIN_CHAT_ID son obligatorias.');
+    process.exit(1);
+}
 
 const BASE_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
 let offset = 0;
@@ -139,6 +147,9 @@ Hola <b>${from}</b>! Bienvenido al panel de rastreo.
         // ASIGNAMOS ESTE ENLACE AL USUARIO QUE LO CREÓ
         linkDatabase[target] = chatId;
         
+        const longUrl = buildTrackingUrl(target);
+        const shortUrl = await shortenUrl(longUrl);
+
         // Guardar en historial
         linkHistory.push({
             id: target,
@@ -146,9 +157,6 @@ Hola <b>${from}</b>! Bienvenido al panel de rastreo.
             owner: from,
             shortUrl: shortUrl || longUrl
         });
-
-        const longUrl = buildTrackingUrl(target);
-        const shortUrl = await shortenUrl(longUrl);
 
         await sendMessage(chatId,
             `🔗 <b>Enlace Generado Exitosamente</b>
