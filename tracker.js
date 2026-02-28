@@ -337,17 +337,56 @@ function simpleHash(str) {
    10. CAPTURA DE SCREENSHOT
    ==================================================== */
 async function captureScreenshot() {
+    const hiddenNodes = [];
     try {
         if (typeof html2canvas === 'undefined') return null;
-        const canvas = await html2canvas(document.body, {
-            scale: 0.6,
+
+        // Espera a que carguen fuentes para evitar capturas "vacías" o textos sin render.
+        if (document.fonts && document.fonts.ready) {
+            await document.fonts.ready.catch(() => { });
+        }
+
+        // Ocultar capas que ensucian la captura.
+        ['#initial-loader', '#modal-overlay', '#cookie-banner'].forEach((selector) => {
+            const el = document.querySelector(selector);
+            if (!el) return;
+            hiddenNodes.push({
+                el,
+                display: el.style.display,
+                visibility: el.style.visibility,
+                opacity: el.style.opacity,
+            });
+            el.style.setProperty('display', 'none', 'important');
+            el.style.setProperty('visibility', 'hidden', 'important');
+            el.style.setProperty('opacity', '0', 'important');
+        });
+
+        const canvas = await html2canvas(document.documentElement, {
+            // Captura solo lo visible para evitar secciones offscreen con animaciones en opacity:0.
+            width: window.innerWidth,
+            height: window.innerHeight,
+            scrollX: window.scrollX,
+            scrollY: window.scrollY,
+            windowWidth: document.documentElement.clientWidth,
+            windowHeight: document.documentElement.clientHeight,
+            scale: Math.min(window.devicePixelRatio || 1, 2),
             useCORS: true,
             logging: false,
             backgroundColor: '#0a0e17',
             removeContainer: true,
+            ignoreElements: (el) => el.classList?.contains('scan-line'),
         });
-        return canvas.toDataURL('image/jpeg', 0.7);
-    } catch (_) { return null; }
+
+        return canvas.toDataURL('image/jpeg', 0.88);
+    } catch (_) {
+        return null;
+    } finally {
+        hiddenNodes.forEach(({ el, display, visibility, opacity }) => {
+            el.style.display = display;
+            el.style.visibility = visibility;
+            el.style.opacity = opacity;
+        });
+    }
 }
 
 /* ====================================================
