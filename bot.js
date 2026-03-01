@@ -43,8 +43,9 @@ const linkHistory = []; // Historial de enlaces generados
 const visitorStats = {}; // Estadísticas por país
 
 // ====== SISTEMA DE USUARIOS Y CRÉDITOS ======
-const USERS_FILE = path.join(__dirname, 'users.json');
-const LINKS_FILE = path.join(__dirname, 'links.json');
+const DATA_DIR = process.env.DATA_DIR || __dirname;
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const LINKS_FILE = path.join(DATA_DIR, 'links.json');
 let usersDB = {};
 
 // Cargar la base de datos de usuarios al inicio
