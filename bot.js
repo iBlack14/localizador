@@ -134,6 +134,18 @@ async function handleCommand(msg) {
     // Opcional: Si quieres que solo el admin pueda usarlo, descomenta esto:
     // if (chatId !== ADMIN_CHAT_ID) return;
 
+    /* ── AUTENTICACIÓN / BUSCAR USUARIO ─────────── */
+    let { data: user, error: userError } = await supabase
+        .from('bot_users')
+        .select('*')
+        .eq('chat_id', chatId)
+        .single();
+
+    // Si el error no es "no rows", algo falló feo (ignoramos "PGRST116" que es Not found)
+    if (userError && userError.code !== 'PGRST116') {
+        console.error("DB Error fetch user:", userError);
+    }
+
     /* ── /start ─────────────────────────────────────── */
     if (text === '/start' || text.startsWith('/start ')) {
         let isNewUser = false;
