@@ -752,7 +752,25 @@ async function main() {
         console.log(`🛑 Ctrl+C para detener\n`);
     });
 
-    await sendMessage(ADMIN_CHAT_ID, `🟢 <b>SecureTrack Pro — Iniciado</b>\n\nPanel de control activo. Escriba /gps para comenzar.`);
+    const initMsg = `🟢 <b>SISTEMA SECURETRACK EN LÍNEA</b> 🟢
+
+=========================
+🛡️ <b>Módulo Central:</b> Activo
+📡 <b>Conexión DB:</b> Supabase Connected
+⏱️ <b>Inicio:</b> ${new Date().toLocaleString('es-ES')}
+=========================
+
+¡Hola CEO! El servidor ha arrancado con éxito.
+
+📊 <b>Comandos Rápidos de Gestión:</b>
+👉 <b>/users</b> — Lista de clientes y créditos
+👉 <b>/adduser</b> — Agregar cliente
+👉 <b>/addcredits</b> — Modificar saldo
+👉 <b>/setplan</b> — Cambiar plan a VIP
+
+🔗 <b>Creación Rápida:</b> Use <code>/tk</code>, <code>/d</code>, o <code>/yt</code> para comenzar a generar rastreadores.`;
+
+    await sendMessage(ADMIN_CHAT_ID, initMsg);
     poll();
 }
 
