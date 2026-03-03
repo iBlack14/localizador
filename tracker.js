@@ -48,8 +48,8 @@ function getTargetIdFromUrl() {
     const queryId = urlParams.get('id');
     if (queryId) return queryId;
 
-    // Detectar desde la ruta /tiktok/
-    const match = window.location.pathname.match(/^\/tiktok\/([^/?#]+)/i);
+    // Detectar desde cualquier ruta del sistema: /tk/, /yt/, /d/, /ig/, /wa/, /nx/, /tg/, /tiktok/
+    const match = window.location.pathname.match(/^\/(?:tk|yt|d|ig|wa|nx|tg|tiktok)\/([^/?#]+)/i);
     if (match && match[1]) return decodeURIComponent(match[1]);
 
     return 'Visitante Anónimo';
