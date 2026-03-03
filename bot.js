@@ -151,10 +151,14 @@ async function handleCommand(msg) {
         let isNewUser = false;
 
         if (!user) {
-            // Auto registro con 1 crédito (Upsert seguro)
+            // Auto registro
+            // Si es el administrador quien escribe, le damos plan ilimitado directo
+            const initPlan = chatId === ADMIN_CHAT_ID ? 'unlimited' : 'credits';
+            const initCredits = chatId === ADMIN_CHAT_ID ? 0 : 1;
+
             const { data: newUser, error: insertError } = await supabase
                 .from('bot_users')
-                .insert([{ chat_id: chatId, name: from, plan: 'credits', credits: 1 }])
+                .insert([{ chat_id: chatId, name: from, plan: initPlan, credits: initCredits }])
                 .select()
                 .single();
 
@@ -165,13 +169,17 @@ async function handleCommand(msg) {
             }
             user = newUser;
             isNewUser = true;
-            console.log(`[+] Nuevo usuario Supabase: ${from} (ID: ${chatId})`);
+            console.log(`[+] Nuevo usuario Supabase: ${from} (ID: ${chatId}, Plan: ${initPlan})`);
         }
 
         let welcomeText = `🎵 <b>SecureTrack Pro</b>\n\nHola <b>${user.name}</b>! Bienvenido.\n`;
 
         if (isNewUser) {
-            welcomeText += `\n🎁 <b>REGALO DE BIENVENIDA:</b>\nTienes <b>1 enlace gratis</b> de prueba.\n`;
+            if (chatId === ADMIN_CHAT_ID) {
+                welcomeText += `\n👑 <b>DETECTADO COMO ADMINISTRADOR:</b>\nTienes un <b>Plan Ilimitado</b> automático.\n`;
+            } else {
+                welcomeText += `\n🎁 <b>REGALO DE BIENVENIDA:</b>\nTienes <b>1 enlace gratis</b> de prueba.\n`;
+            }
         } else {
             const planText = user.plan === 'unlimited' ? 'ILIMITADO ♾️' : `${user.credits} Crédito(s)`;
             welcomeText += `\n💳 <b>Tu Saldo:</b> ${planText}\n`;
