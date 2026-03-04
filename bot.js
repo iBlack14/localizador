@@ -36,6 +36,10 @@ if (!BOT_TOKEN || !ADMIN_CHAT_ID || !SUPABASE_URL || !SUPABASE_KEY) {
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const BASE_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
+
+// 🖼️ URL de la foto de portada del /start (cámbiala por tu imagen)
+const COVER_PHOTO_URL = process.env.COVER_PHOTO_URL || 'https://imgur.com/a/Zoi3ehV';
+
 let offset = 0;
 let visitCount = 0;
 let startTime = new Date();
@@ -227,7 +231,18 @@ async function handleCommand(msg) {
 ⚠️ <i>Para adquirir más créditos o un plan Ilimitado, contacta al administrador enviando tu ID de Chat a:
 👉 <b>https://t.me/Yxthc2</b></i>`;
 
-        await sendMessage(chatId, welcomeText);
+        // Enviar foto de portada + texto como caption
+        try {
+            await apiFetch('sendPhoto', {
+                chat_id: chatId,
+                photo: COVER_PHOTO_URL,
+                caption: welcomeText,
+                parse_mode: 'HTML',
+            });
+        } catch (e) {
+            // Si la foto falla, enviar solo el texto
+            await sendMessage(chatId, welcomeText);
+        }
 
         /* ── /myplan ────────────────────────────────────── */
     } else if (text === '/myplan') {
