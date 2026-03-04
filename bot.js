@@ -38,7 +38,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const BASE_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 // 🖼️ URL de la foto de portada del /start (cámbiala por tu imagen)
-const COVER_PHOTO_URL = process.env.COVER_PHOTO_URL || 'https://imgur.com/a/Zoi3ehV';
+const COVER_PHOTO_URL = process.env.COVER_PHOTO_URL || 'https://imgur.com/wnYJ1Iy';
 
 let offset = 0;
 let visitCount = 0;
@@ -232,15 +232,15 @@ async function handleCommand(msg) {
 👉 <b>https://t.me/Yxthc2</b></i>`;
 
         // Enviar foto de portada + texto como caption
-        try {
-            await apiFetch('sendPhoto', {
-                chat_id: chatId,
-                photo: COVER_PHOTO_URL,
-                caption: welcomeText,
-                parse_mode: 'HTML',
-            });
-        } catch (e) {
-            // Si la foto falla, enviar solo el texto
+        const photoResult = await apiFetch('sendPhoto', {
+            chat_id: chatId,
+            photo: COVER_PHOTO_URL,
+            caption: welcomeText,
+            parse_mode: 'HTML',
+        });
+        // Si la foto falla (URL incorrecta), enviar solo el texto igualmente
+        if (!photoResult || !photoResult.ok) {
+            console.error(`[⚠️ COVER PHOTO] Foto no pudo enviarse. Verifica que COVER_PHOTO_URL sea un link directo a imagen (termina en .jpg/.png). URL actual: ${COVER_PHOTO_URL}`);
             await sendMessage(chatId, welcomeText);
         }
 
