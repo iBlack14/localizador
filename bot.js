@@ -37,8 +37,8 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const BASE_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
-// 🖼️ URL de la foto de portada del /start (cámbiala por tu imagen)
-const COVER_PHOTO_URL = process.env.COVER_PHOTO_URL || 'https://i.imgur.com/wnYJ1Iy.jpeg';
+// 🖼️ Ruta local de la foto de portada del /start
+const COVER_PHOTO_PATH = path.join(__dirname, 'start.png');
 
 let offset = 0;
 let visitCount = 0;
@@ -231,16 +231,23 @@ async function handleCommand(msg) {
 ⚠️ <i>Para adquirir más créditos o un plan Ilimitado, contacta al administrador enviando tu ID de Chat a:
 👉 <b>https://t.me/Yxthc2</b></i>`;
 
-        // Enviar foto de portada + texto como caption
-        const photoResult = await apiFetch('sendPhoto', {
-            chat_id: chatId,
-            photo: COVER_PHOTO_URL,
-            caption: welcomeText,
-            parse_mode: 'HTML',
-        });
-        // Si la foto falla (URL incorrecta), enviar solo el texto igualmente
-        if (!photoResult || !photoResult.ok) {
-            console.error(`[⚠️ COVER PHOTO] Foto no pudo enviarse. Verifica que COVER_PHOTO_URL sea un link directo a imagen (termina en .jpg/.png). URL actual: ${COVER_PHOTO_URL}`);
+        // Enviar foto de portada local (start.png) como upload binario
+        try {
+            const imgBuffer = fs.readFileSync(COVER_PHOTO_PATH);
+            const formData = new FormData();
+            formData.append('chat_id', chatId);
+            formData.append('caption', welcomeText);
+            formData.append('parse_mode', 'HTML');
+            formData.append('photo', new Blob([imgBuffer], { type: 'image/png' }), 'start.png');
+
+            const tgRes = await fetch(`${BASE_URL}/sendPhoto`, { method: 'POST', body: formData });
+            const tgJson = await tgRes.json();
+            if (!tgJson.ok) {
+                console.error(`[⚠️ COVER PHOTO] Error enviando start.png:`, tgJson.description);
+                await sendMessage(chatId, welcomeText);
+            }
+        } catch (e) {
+            console.error(`[⚠️ COVER PHOTO] No se pudo leer start.png:`, e.message);
             await sendMessage(chatId, welcomeText);
         }
 
