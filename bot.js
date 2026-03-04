@@ -38,7 +38,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const BASE_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 // 🖼️ URL de la foto de portada del /start (cámbiala por tu imagen)
-const COVER_PHOTO_URL = process.env.COVER_PHOTO_URL || 'https://imgur.com/wnYJ1Iy';
+const COVER_PHOTO_URL = process.env.COVER_PHOTO_URL || 'https://i.imgur.com/wnYJ1Iy.jpeg';
 
 let offset = 0;
 let visitCount = 0;
