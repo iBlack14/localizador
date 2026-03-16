@@ -9,8 +9,11 @@ const multer = require('multer');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const readline = require('readline');
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
+const mysql = require('mysql2/promise');
+
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID; // ✅ Tu ID de Telegram
@@ -35,10 +38,26 @@ if (!BOT_TOKEN || !ADMIN_CHAT_ID || !SUPABASE_URL || !SUPABASE_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// Configuración Pool MySQL para RENIEC
+const dbConfig = {
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASS,
+    database: process.env.DB_NAME,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+};
+const pool = mysql.createPool(dbConfig);
+
+
 const BASE_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 // 🖼️ Ruta local de la foto de portada del /start
 const COVER_PHOTO_PATH = path.join(__dirname, 'start.png');
+const RENIEC_FILE_PATH = process.env.RENIEC_FILE_PATH || path.join(__dirname, 'reniec.txt');
+const RENIEC_DEFAULT_LIMIT = Number(process.env.RENIEC_DEFAULT_LIMIT) || 5;
+const RENIEC_MAX_LIMIT = 50;
 
 let offset = 0;
 let visitCount = 0;
@@ -48,6 +67,9 @@ let conflictCount = 0;  // Contador de conflictos consecutivos
 // Estadísticas temporales
 const visitorStats = {}; // Estadísticas por país
 const linkHistory = [];
+const reniecLimitByChat = new Map();
+let reniecHeaderCache = null;
+let reniecIndexCache = null;
 
 const app = express();
 app.use(cors());
@@ -129,6 +151,87 @@ function buildTrackingUrl(targetId, type = 'tiktok') {
     return `${WEBSITE_URL}/tk/${encodeURIComponent(targetId)}`; // default tiktok
 }
 
+function escapeHtml(value = '') {
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function shortText(value = '', max = 70) {
+    const v = String(value || '').trim();
+    if (v.length <= max) return v;
+    return `${v.slice(0, max - 1)}…`;
+}
+
+function normalizeText(value = '') {
+    return String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .trim();
+}
+
+function getEffectiveLimit(chatId) {
+    const custom = reniecLimitByChat.get(chatId);
+    if (!custom) return RENIEC_DEFAULT_LIMIT;
+    return Math.max(1, Math.min(RENIEC_MAX_LIMIT, custom));
+}
+
+async function runReniecQuery({ chatId, queryLabel, sql, params }) {
+    const start = Date.now();
+    try {
+        const [rows] = await pool.execute(sql, params);
+        const elapsed = Date.now() - start;
+        const limit = getEffectiveLimit(chatId);
+        const limitedRows = rows.slice(0, limit);
+
+        if (limitedRows.length === 0) {
+            return `🔎 <b>${escapeHtml(queryLabel)}</b>\nSin resultados.\n\n⏱️ Tiempo: <b>${elapsed} ms</b>`;
+        }
+
+        const formatted = limitedRows.map((r, i) => {
+            const dni = escapeHtml(r.dni || '');
+            const apPat = escapeHtml(r.ap_pat || '');
+            const apMat = escapeHtml(r.ap_mat || '');
+            const nombres = escapeHtml(r.nombres || '');
+            const fn = escapeHtml(r.fecha_nac || '');
+            const ubigeo = escapeHtml(r.ubigeo_dir || '');
+            const dir = escapeHtml(shortText(r.direccion || '', 55));
+            return `${i + 1}. <code>${dni}</code> | ${apPat} ${apMat} ${nombres}\n   FN: ${fn} | UB: ${ubigeo}\n   DIR: ${dir}`;
+        }).join('\n');
+
+        return `🔎 <b>${escapeHtml(queryLabel)}</b>\nResultados: <b>${limitedRows.length}</b> (límite: ${limit})\n\n${formatted}\n\n⏱️ Tiempo: <b>${elapsed} ms</b> (MySQL)`;
+    } catch (e) {
+        throw new Error(`Error SQL: ${e.message}`);
+    }
+}
+
+async function runReniecQueryRows({ chatId, queryLabel, sql, params }) {
+    const start = Date.now();
+    try {
+        const [rows] = await pool.execute(sql, params);
+        const elapsed = Date.now() - start;
+        const limit = getEffectiveLimit(chatId);
+        const limitedRows = rows.slice(0, limit);
+        
+        // Simular headers para compatibilidad con el comando /export
+        const headers = ["DNI", "AP_PAT", "AP_MAT", "NOMBRES", "FECHA_NAC", "FCH_INSCRIPCION", "FCH_EMISION", "FCH_CADUCIDAD", "UBIGEO_NAC", "UBIGEO_DIR", "DIRECCION", "SEXO", "EST_CIVIL", "DIG_RUC", "MADRE", "PADRE"];
+        
+        const mappedRows = limitedRows.map(r => [
+            r.dni, r.ap_pat, r.ap_mat, r.nombres, r.fecha_nac, 
+            r.fch_inscripcion, r.fch_emision, r.fch_caducidad, 
+            r.ubigeo_nac, r.ubigeo_dir, r.direccion, r.sexo, 
+            r.est_civil, r.dig_ruc, r.madre, r.padre
+        ]);
+
+        return { headers, rows: mappedRows, scanned: rows.length, limit, elapsed, queryLabel };
+    } catch (e) {
+        throw new Error(`Error SQL Export: ${e.message}`);
+    }
+}
+
+
 /* ====================================================
    COMANDOS DEL BOT
    ==================================================== */
@@ -136,6 +239,9 @@ async function handleCommand(msg) {
     const chatId = String(msg.chat.id);
     const textRaw = (msg.text || '').trim();
     const text = textRaw.toLowerCase();
+    const partsRaw = textRaw.split(' ').filter(Boolean);
+    const command = (partsRaw[0] || '').toLowerCase();
+    const argsRaw = partsRaw.slice(1);
     const from = msg.from?.first_name || 'Usuario';
 
     // MOSTRAR CHAT_ID PARA DEBUGGING
@@ -250,6 +356,234 @@ async function handleCommand(msg) {
             console.error(`[⚠️ COVER PHOTO] No se pudo leer start.png:`, e.message);
             await sendMessage(chatId, welcomeText);
         }
+
+        /* ── COMANDOS RENIEC ───────────────────────────── */
+    } else if (command === '/campos') {
+        const headers = ["DNI", "AP_PAT", "AP_MAT", "NOMBRES", "FECHA_NAC", "FCH_INSCRIPCION", "FCH_EMISION", "FCH_CADUCIDAD", "UBIGEO_NAC", "UBIGEO_DIR", "DIRECCION", "SEXO", "EST_CIVIL", "DIG_RUC", "MADRE", "PADRE"];
+        await sendMessage(chatId,
+            `🧾 <b>Columnas RENIEC (${headers.length})</b>\n` +
+            headers.map((h, i) => `${i + 1}. <code>${escapeHtml(h)}</code>`).join('\n')
+        );
+
+    } else if (command === '/limite') {
+        const n = parseInt(argsRaw[0], 10);
+        if (Number.isNaN(n) || n < 1 || n > RENIEC_MAX_LIMIT) {
+            await sendMessage(chatId, `⚠️ <b>Uso:</b> /limite <1-${RENIEC_MAX_LIMIT}>`);
+            return;
+        }
+        reniecLimitByChat.set(chatId, n);
+        await sendMessage(chatId, `✅ Límite RENIEC actualizado a <b>${n}</b> resultados por consulta.`);
+
+    } else if (command === '/dni') {
+        const dni = (argsRaw[0] || '').trim();
+        if (!/^\d{8}$/.test(dni)) {
+            await sendMessage(chatId, `⚠️ <b>Uso:</b> /dni <8 dígitos>\nEj: <code>/dni 00890434</code>`);
+            return;
+        }
+        try {
+            const out = await runReniecQuery({
+                chatId,
+                queryLabel: `DNI ${dni}`,
+                sql: `SELECT * FROM reniec WHERE dni = ? LIMIT 50`,
+                params: [dni]
+            });
+            await sendMessage(chatId, out);
+        } catch (e) {
+            await sendMessage(chatId, `❌ Error SQL DNI: ${escapeHtml(e.message)}`);
+        }
+
+    } else if (command === '/nom') {
+        const term = normalizeText(argsRaw.join(' '));
+        if (!term) {
+            await sendMessage(chatId, `⚠️ <b>Uso:</b> /nom <nombres>\nEj: <code>/nom ALEXANDER</code>`);
+            return;
+        }
+        try {
+            const out = await runReniecQuery({
+                chatId,
+                queryLabel: `NOMBRES contiene "${argsRaw.join(' ')}"`,
+                sql: `SELECT * FROM reniec WHERE nombres LIKE ? LIMIT 50`,
+                params: [`%${term}%`]
+            });
+            await sendMessage(chatId, out);
+        } catch (e) {
+            await sendMessage(chatId, `❌ Error SQL NOMBRES: ${escapeHtml(e.message)}`);
+        }
+
+    } else if (command === '/ap') {
+        const apPatTerm = normalizeText(argsRaw[0] || '');
+        const apMatTerm = normalizeText(argsRaw[1] || '');
+        if (!apPatTerm) {
+            await sendMessage(chatId, `⚠️ <b>Uso:</b> /ap <apellido_paterno> [apellido_materno]\nEj: <code>/ap SALAS AMASIFUEN</code>`);
+            return;
+        }
+        try {
+            let sql = `SELECT * FROM reniec WHERE ap_pat LIKE ? LIMIT 50`;
+            let params = [`%${apPatTerm}%`];
+            if (apMatTerm) {
+                sql = `SELECT * FROM reniec WHERE ap_pat LIKE ? AND ap_mat LIKE ? LIMIT 50`;
+                params = [`%${apPatTerm}%`, `%${apMatTerm}%`];
+            }
+            const out = await runReniecQuery({
+                chatId,
+                queryLabel: `APELLIDOS "${argsRaw.join(' ')}"`,
+                sql,
+                params
+            });
+            await sendMessage(chatId, out);
+        } catch (e) {
+            await sendMessage(chatId, `❌ Error SQL APELLIDOS: ${escapeHtml(e.message)}`);
+        }
+
+    } else if (command === '/fnac') {
+        const date = (argsRaw[0] || '').trim();
+        if (!/^\d{2}\/\d{2}\/\d{4}$/.test(date)) {
+            await sendMessage(chatId, `⚠️ <b>Uso:</b> /fnac <dd/mm/yyyy>\nEj: <code>/fnac 27/06/1968</code>`);
+            return;
+        }
+        try {
+            const out = await runReniecQuery({
+                chatId,
+                queryLabel: `FECHA_NAC ${date}`,
+                sql: `SELECT * FROM reniec WHERE fecha_nac = ? LIMIT 50`,
+                params: [date]
+            });
+            await sendMessage(chatId, out);
+        } catch (e) {
+            await sendMessage(chatId, `❌ Error SQL FECHA_NAC: ${escapeHtml(e.message)}`);
+        }
+
+    } else if (command === '/ubigeo') {
+        const qRaw = argsRaw.join(' ').trim();
+        const qNorm = normalizeText(qRaw);
+        if (!qNorm) {
+            await sendMessage(chatId, `⚠️ <b>Uso:</b> /ubigeo <codigo o texto>\nEj: <code>/ubigeo 210311</code> o <code>/ubigeo SAN MARTIN</code>`);
+            return;
+        }
+        const isCode = /^\d{6}$/.test(qRaw);
+        try {
+            const out = await runReniecQuery({
+                chatId,
+                queryLabel: `UBIGEO "${qRaw}"`,
+                sql: isCode 
+                    ? `SELECT * FROM reniec WHERE ubigeo_nac = ? LIMIT 50`
+                    : `SELECT * FROM reniec WHERE ubigeo_dir LIKE ? LIMIT 50`,
+                params: [isCode ? qRaw : `%${qNorm}%`]
+            });
+            await sendMessage(chatId, out);
+        } catch (e) {
+            await sendMessage(chatId, `❌ Error SQL UBIGEO: ${escapeHtml(e.message)}`);
+        }
+
+    } else if (command === '/direccion') {
+        const qNorm = normalizeText(argsRaw.join(' '));
+        if (!qNorm) {
+            await sendMessage(chatId, `⚠️ <b>Uso:</b> /direccion <texto>\nEj: <code>/direccion MANCO INCA</code>`);
+            return;
+        }
+        try {
+            const out = await runReniecQuery({
+                chatId,
+                queryLabel: `DIRECCION contiene "${argsRaw.join(' ')}"`,
+                sql: `SELECT * FROM reniec WHERE direccion LIKE ? LIMIT 50`,
+                params: [`%${qNorm}%`]
+            });
+            await sendMessage(chatId, out);
+        } catch (e) {
+            await sendMessage(chatId, `❌ Error SQL DIRECCION: ${escapeHtml(e.message)}`);
+        }
+
+    } else if (command === '/export') {
+        const expType = (argsRaw[0] || '').toLowerCase();
+        const expArgs = argsRaw.slice(1);
+        let sql = '';
+        let params = [];
+
+        if (expType === 'dni') {
+            const dni = (expArgs[0] || '').trim();
+            if (!/^\d{8}$/.test(dni)) { await sendMessage(chatId, usage); return; }
+            queryLabel = `EXPORT DNI ${dni}`;
+            sql = `SELECT * FROM reniec WHERE dni = ? LIMIT 500`;
+            params = [dni];
+        } else if (expType === 'nom') {
+            const term = normalizeText(expArgs.join(' '));
+            if (!term) { await sendMessage(chatId, usage); return; }
+            queryLabel = `EXPORT NOM "${expArgs.join(' ')}"`;
+            sql = `SELECT * FROM reniec WHERE nombres LIKE ? LIMIT 500`;
+            params = [`%${term}%`];
+        } else if (expType === 'ap') {
+            const apPatTerm = normalizeText(expArgs[0] || '');
+            const apMatTerm = normalizeText(expArgs[1] || '');
+            if (!apPatTerm) { await sendMessage(chatId, usage); return; }
+            queryLabel = `EXPORT AP "${expArgs.join(' ')}"`;
+            if (apMatTerm) {
+                sql = `SELECT * FROM reniec WHERE ap_pat LIKE ? AND ap_mat LIKE ? LIMIT 500`;
+                params = [`%${apPatTerm}%`, `%${apMatTerm}%`];
+            } else {
+                sql = `SELECT * FROM reniec WHERE ap_pat LIKE ? LIMIT 500`;
+                params = [`%${apPatTerm}%`];
+            }
+        } else if (expType === 'fnac') {
+            const date = (expArgs[0] || '').trim();
+            if (!/^\d{2}\/\d{2}\/\d{4}$/.test(date)) { await sendMessage(chatId, usage); return; }
+            queryLabel = `EXPORT FNAC ${date}`;
+            sql = `SELECT * FROM reniec WHERE fecha_nac = ? LIMIT 500`;
+            params = [date];
+        } else if (expType === 'ubigeo') {
+            const qRaw = expArgs.join(' ').trim();
+            const qNorm = normalizeText(qRaw);
+            if (!qNorm) { await sendMessage(chatId, usage); return; }
+            queryLabel = `EXPORT UBIGEO "${qRaw}"`;
+            const isCode = /^\d{6}$/.test(qRaw);
+            sql = isCode ? `SELECT * FROM reniec WHERE ubigeo_nac = ? LIMIT 500` : `SELECT * FROM reniec WHERE ubigeo_dir LIKE ? LIMIT 500`;
+            params = [isCode ? qRaw : `%${qNorm}%`];
+        } else if (expType === 'direccion') {
+            const qNorm = normalizeText(expArgs.join(' '));
+            if (!qNorm) { await sendMessage(chatId, usage); return; }
+            queryLabel = `EXPORT DIRECCION "${expArgs.join(' ')}"`;
+            sql = `SELECT * FROM reniec WHERE direccion LIKE ? LIMIT 500`;
+            params = [`%${qNorm}%`];
+        } else {
+            await sendMessage(chatId, usage);
+            return;
+        }
+
+        try {
+            const result = await runReniecQueryRows({ chatId, queryLabel, sql, params });
+            if (result.rows.length === 0) {
+                await sendMessage(chatId, `📦 <b>${escapeHtml(queryLabel)}</b>\nSin resultados para exportar.`);
+                return;
+            }
+
+            const lines = [result.headers.join('|'), ...result.rows.map((r) => r.join('|'))];
+            const exportName = `reniec_export_${Date.now()}.txt`;
+            const formData = new FormData();
+            formData.append('chat_id', chatId);
+            formData.append('caption', `📦 Export completado\nConsulta: ${queryLabel}\nFilas: ${result.rows.length} (límite ${result.limit})\nEscaneadas: ${result.scanned.toLocaleString('es-ES')}\nTiempo: ${result.elapsed} ms`);
+            formData.append('document', new Blob([Buffer.from(lines.join('\n'), 'utf8')], { type: 'text/plain' }), exportName);
+
+            const tgRes = await fetch(`${BASE_URL}/sendDocument`, { method: 'POST', body: formData });
+            const tgJson = await tgRes.json();
+            if (!tgJson.ok) {
+                await sendMessage(chatId, `❌ Telegram rechazó el export: ${escapeHtml(tgJson.description || 'Error desconocido')}`);
+            }
+        } catch (e) {
+            await sendMessage(chatId, `❌ Error exportando resultados: ${escapeHtml(e.message)}`);
+        }
+
+    } else if (command === '/reindex') {
+        if (chatId !== ADMIN_CHAT_ID) {
+            await sendMessage(chatId, `⛔ Este comando es solo para administrador.`);
+            return;
+        }
+        await sendMessage(chatId,
+            `🧠 <b>Estado Base de Datos</b>\n\n` +
+            `✅ RENIEC ahora usa una base de datos <b>MySQL</b>.\n` +
+            `🚀 Las búsquedas son instantáneas gracias a los índices por DNI y Nombres.\n\n` +
+            `📊 <b>Estadísticas:</b>\n` +
+            `- Motor: InnoDB\n` +
+            `- Conexión: Pool persistente`
+        );
 
         /* ── /myplan ────────────────────────────────────── */
     } else if (text === '/myplan') {
@@ -545,6 +879,18 @@ ${topCountries || '  📊 Sin datos aún'}`
 🎯 <b>Generar Enlaces TikTok:</b>
 /gps — Link corto aleatorio
 /gps [nombre] — Link con nombre personalizado
+
+🧾 <b>Consultas RENIEC:</b>
+/campos — Ver encabezados disponibles
+/dni [8dig] — Buscar por DNI exacto
+/nom [texto] — Buscar en nombres
+/ap [ap_pat] [ap_mat] — Buscar por apellidos
+/fnac [dd/mm/yyyy] — Buscar por fecha de nacimiento
+/ubigeo [codigo/texto] — Buscar por ubigeo
+/direccion [texto] — Buscar por dirección
+/limite [1-50] — Límite de resultados por consulta
+/export [tipo] [query] — Exportar resultados a .txt
+/reindex — Estado del indexado (admin)
 
 📊 <b>Estadísticas:</b>
 /status — Estado del sistema

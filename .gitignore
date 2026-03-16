@@ -7,3 +7,8 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 .DS_Store
+
+# Archivos pesados y scripts temporales
+reniec.txt
+migrate_reniec.js
+reniec_export_*.txt
