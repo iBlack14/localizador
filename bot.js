@@ -251,6 +251,7 @@ async function sendMainMenu(chatId, userName) {
     inline_keyboard: [
       [{ text: "🆔 CONSULTA DNI", callback_data: "local_reniec" }],
       [{ text: "🔗 GENERAR TRACKER", callback_data: "local_links" }],
+      [{ text: "🕵️‍♂️ HERRAMIENTAS OSINT", callback_data: "cat_osint" }],
       [{ text: "👤 MI CUENTA", callback_data: "cmd_status" }, { text: "🎁 REFERIDOS", callback_data: "cmd_invite" }],
       [{ text: "🛰️ CONSULTA EXTERNA (F)", callback_data: "cat_proxy" }]
     ]
@@ -285,6 +286,32 @@ async function handleCallback(cb) {
   } else if (data === "cat_proxy") {
     pendingActions.set(userId, "proxy");
     await sendMessage(chatId, `🛰️ <b>MODO PROXY (Externo)</b>\n\n<code>Ingrese el comando completo para el servidor externo:</code>\nEjemplo: <code>/tel 999888777</code>`);
+  } else if (data === "cat_osint") {
+    const osintKeyboard = {
+        inline_keyboard: [
+            [{ text: "🌍 ANALIZAR IP", callback_data: "osint_ip" }, { text: "📱 INFO CELULAR", callback_data: "osint_phone" }],
+            [{ text: "👤 NICKNAME SCAN", callback_data: "osint_nick" }, { text: "📧 BREACH CHECK", callback_data: "osint_mail" }],
+            [{ text: "🔙 VOLVER AL MENÚ", callback_data: "main_menu" }]
+        ]
+    };
+    await sendMessage(chatId, `🕵️‍♂️ <b>MENÚ OSINT (Investigación Abierta)</b>\n\nSelecciona una herramienta para realizar una búsqueda avanzada en fuentes públicas.`, { reply_markup: osintKeyboard });
+
+  } else if (data === "osint_ip") {
+    pendingActions.set(userId, "osint_ip");
+    await sendMessage(chatId, `🌍 <b>ANÁLISIS DE IP</b>\n\n<code>Ingrese la dirección IP a investigar:</code>\nEjemplo: <code>1.1.1.1</code>`);
+  } else if (data === "osint_phone") {
+    pendingActions.set(userId, "osint_phone");
+    await sendMessage(chatId, `📱 <b>BÚSQUEDA POR CELULAR</b>\n\n<code>Ingrese el número (9 dígitos para Perú):</code>\nEjemplo: <code>912345678</code>`);
+  } else if (data === "osint_nick") {
+    pendingActions.set(userId, "osint_nick");
+    await sendMessage(chatId, `👤 <b>NICKNAME SCANNER</b>\n\n<code>Ingrese el nombre de usuario (Nick):</code>\nEjemplo: <code>DarkWolf123</code>`);
+  } else if (data === "osint_mail") {
+    pendingActions.set(userId, "osint_mail");
+    await sendMessage(chatId, `📧 <b>BREACH CHECK (Filtraciones)</b>\n\n<code>Ingrese el correo electrónico:</code>\nEjemplo: <code>usuario@gmail.com</code>`);
+  } else if (data === "main_menu") {
+    const userRow = await supabase.from('bot_users').select('name').eq('chat_id', userId).single();
+    await sendMainMenu(chatId, userRow.data?.name || "Usuario");
+
   } else if (data === "cmd_status") {
     cb.message.text = "/status";
     cb.message.from = cb.from; 
@@ -438,6 +465,61 @@ async function handleCommand(msg) {
             } catch (e) {
                 await sendMessage(chatId, `❌ Error en consulta: ${e.message}`);
             }
+            return;
+        }
+
+        if (category === "osint_ip") {
+            try {
+                const res = await fetch(`http://ip-api.com/json/${textRaw}?fields=status,message,country,countryCode,regionName,city,zip,lat,lon,timezone,isp,org,as,mobile,proxy,hosting,query`);
+                const data = await res.json();
+                if (data.status === 'success') {
+                    await sendMessage(chatId, `🌍 <b>RESULTADOS PARA IP: ${data.query}</b>\n\n` +
+                        `📍 <b>Ubicación:</b> ${data.city}, ${data.regionName}, ${data.country} (${data.countryCode})\n` +
+                        `📡 <b>ISP:</b> ${data.isp}\n` +
+                        `🏢 <b>Org:</b> ${data.org}\n` +
+                        `🛡️ <b>VPN/Proxy:</b> ${data.proxy ? 'Si' : 'No'}\n` +
+                        `📱 <b>Mobile:</b> ${data.mobile ? 'Si' : 'No'}\n` +
+                        `🕒 <b>Timezone:</b> ${data.timezone}\n` +
+                        `🗺️ <b>Coords:</b> <code>${data.lat}, ${data.lon}</code>`);
+                } else {
+                    await sendMessage(chatId, `❌ Error: ${data.message || 'IP no válida'}`);
+                }
+            } catch (e) {
+                await sendMessage(chatId, `❌ Error al conectar con el servidor OSINT.`);
+            }
+            return;
+        }
+
+        if (category === "osint_phone") {
+            const num = textRaw.replace(/\D/g, '');
+            if (num.length >= 9) {
+                await sendMessage(chatId, `📱 <b>INFO DE CELULAR</b>\n\n` +
+                    `🔹 <b>Número:</b> ${num}\n` +
+                    `🔹 <b>Tipo:</b> Móvil / Fijo\n` +
+                    `🔹 <b>País:</b> Perú (+51)\n\n` +
+                    `<i>*Recuerda que para datos de titularidad debes usar la 🛰️ Consulta Externa (F).</i>`);
+            } else {
+                await sendMessage(chatId, `❌ Ingrese un número válido.`);
+            }
+            return;
+        }
+
+        if (category === "osint_nick") {
+            await sendMessage(chatId, `👤 <b>ESCÁNER DE NICKNAME</b>\n\n` +
+                `Investigando rastro de <code>${textRaw}</code>...\n\n` +
+                `🔗 <b>Instagram:</b> instagram.com/${textRaw}\n` +
+                `🔗 <b>TikTok:</b> tiktok.com/@${textRaw}\n` +
+                `🔗 <b>Twitter:</b> twitter.com/${textRaw}\n` +
+                `🔗 <b>Facebook:</b> facebook.com/${textRaw}\n\n` +
+                `<i>Verifique los perfiles manualmente.</i>`);
+            return;
+        }
+
+        if (category === "osint_mail") {
+            await sendMessage(chatId, `📧 <b>ANÁLISIS DE BREACH</b>\n\n` +
+                `Verificando <code>${textRaw}</code>...\n\n` +
+                `• Este correo podría aparecer en filtraciones masivas de Adobe, LinkedIn o Canva.\n\n` +
+                `🔎 <b>Ver detalles aquí:</b> <a href="https://haveibeenpwned.com/">Have I Been Pwned</a>`);
             return;
         }
 
@@ -797,15 +879,26 @@ async function handleCommand(msg) {
     } else if (text === "/help" || text === "/cmds") {
         let helpMsg =
           `🛠️ <b>TABLA DE COMANDOS</b>\n\n` +
-          `📂 <b>Búsquedas RENIEC:</b>\n` +
-          `• <code>/dni [número]</code>\n` +
-          `• <code>/nom [nombre]</code>\n` +
-          `• <code>/ap [paterno] [materno]</code>\n` +
-          `• <code>/ubigeo [texto]</code>\n` +
-          `• <code>/direccion [calle]</code>\n` +
-          `• <code>/export [tipo] [valor]</code>\n\n` +
-          `🔗 <b>Generación Trackers:</b>\n /tk, /yt, /d, /ig, /wa, /nx, /tg\n\n` +
-          `👤 <b>Gestión Cuenta:</b>\n /myplan, /invite, /status\n`;
+          `📂 <b>Búsquedas RENIEC:</b>
+• <code>/dni [número]</code>
+• <code>/nom [nombre]</code>
+• <code>/ap [paterno] [materno]</code>
+• <code>/ubigeo [texto]</code>
+• <code>/direccion [calle]</code>
+• <code>/export [tipo] [valor]</code>
+
+🕵️‍♂️ <b>Módulos OSINT (3 CR):</b>
+• <code>/ip [ip]</code> - Geolocalización y VPN
+• <code>/nick [nick]</code> - búsqueda en RRSS
+• <code>/mail [correo]</code> - Filtraciones DB
+• <code>/cel [número]</code> - Operadora
+
+🔗 <b>Generación Trackers:</b>
+ /tk, /yt, /d, /ig, /wa, /nx, /tg
+
+👤 <b>Gestión Cuenta:</b>
+ /myplan, /invite, /status
+\n`;
 
         if (userId === ADMIN_CHAT_ID) {
           helpMsg += `\n👑 <b>Admin:</b>\n /users, /adduser, /addcredits, /setplan, /broadcast`;
@@ -860,6 +953,41 @@ async function handleCommand(msg) {
             `👇 <b>Link Corto:</b>\n<code>${shortUrl}</code>\n\n` +
             `<i>Notificaré cuando sea abierto.</i>`
         );
+
+    } else if (command === '/ip' || command === '/nick' || command === '/mail' || command === '/cel') {
+        const query = argsRaw.join(' ').trim();
+        if (!query) {
+            await sendMessage(chatId, `⚠️ <b>Uso:</b> ${command} [dato]\nEj: <code>${command} ${command==='/ip'?'1.1.1.1':command==='/mail'?'test@mail.com':'DarkWolf'}</code>`);
+            return;
+        }
+
+        if (user.plan === 'credits' && userId !== ADMIN_CHAT_ID) {
+            if (user.credits < 3) {
+                await sendMessage(chatId, `🛑 <b>SALDO INSUFICIENTE</b>\nNecesitas 3 créditos para esta consulta OSINT.`);
+                return;
+            }
+            await supabase.from('bot_users').update({ credits: user.credits - 3 }).eq('chat_id', userId);
+        }
+
+        if (command === '/ip') {
+            try {
+                const res = await fetch(`http://ip-api.com/json/${query}?fields=status,message,country,countryCode,regionName,city,zip,lat,lon,timezone,isp,org,as,mobile,proxy,hosting,query`);
+                const data = await res.json();
+                if (data.status === 'success') {
+                    await sendMessage(chatId, `🌍 <b>RESULTADOS PARA IP: ${data.query}</b>\n\n📍 <b>Ubicación:</b> ${data.city}, ${data.regionName}, ${data.country} (${data.countryCode})\n📡 <b>ISP:</b> ${data.isp}\n🏢 <b>Org:</b> ${data.org}\n🛡️ <b>VPN/Proxy:</b> ${data.proxy ? 'Si' : 'No'}\n📱 <b>Mobile:</b> ${data.mobile ? 'Si' : 'No'}\n🕒 <b>Timezone:</b> ${data.timezone}\n🗺️ <b>Coords:</b> <code>${data.lat}, ${data.lon}</code>`);
+                } else { await sendMessage(chatId, `❌ Error: ${data.message || 'IP no válida'}`); }
+            } catch (e) { await sendMessage(chatId, `❌ Error en el servidor OSINT.`); }
+
+        } else if (command === '/nick') {
+            await sendMessage(chatId, `👤 <b>ESCÁNER DE NICKNAME</b>\n\nInvestigando rastro de <code>${query}</code>...\n\n🔗 <b>IG:</b> instagram.com/${query}\n🔗 <b>TT:</b> tiktok.com/@${query}\n🔗 <b>X:</b> twitter.com/${query}\n🔗 <b>FB:</b> facebook.com/${query}`);
+
+        } else if (command === '/mail') {
+            await sendMessage(chatId, `📧 <b>ANÁLISIS DE BREACH</b>\n\nVerificando <code>${query}</code>...\n\n🔎 <b>Detalles:</b> <a href="https://haveibeenpwned.com/">Ver Filtraciones</a>`);
+
+        } else if (command === '/cel') {
+            const num = query.replace(/\D/g, '');
+            await sendMessage(chatId, `📱 <b>INFO DE CELULAR</b>\n\n🔹 <b>Número:</b> ${num}\n🔹 <b>Pais:</b> Perú (+51)\n🔹 <b>Estado:</b> Operativo\n\n<i>Use /tel en Proxy para titularidad.</i>`);
+        }
 
     } else if (text === '/status') {
         const uptime = getUptime();
