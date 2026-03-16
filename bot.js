@@ -311,11 +311,12 @@ async function handleCallback(cb) {
     pendingActions.set(userId, "proxy");
     await sendMessage(chatId, `🛰️ <b>MODO PROXY (Externo)</b>\n\n<code>Ingrese el comando completo para el servidor externo:</code>\nEjemplo: <code>/tel 999888777</code>`);
   } else if (data === "cmd_status") {
-    // Redirigir al comando status existente
-    msg.text = "/status";
+    cb.message.text = "/status";
+    cb.message.from = cb.from; // Asegurar que el remitente sea el correcto
     await handleCommand(cb.message);
   } else if (data === "cmd_invite") {
-    msg.text = "/invite";
+    cb.message.text = "/invite";
+    cb.message.from = cb.from;
     await handleCommand(cb.message);
   }
   
@@ -1007,21 +1008,21 @@ async function poll() {
         if (data && data.result && data.result.length > 0) {
             offset = data.result[data.result.length - 1].update_id + 1;
             for (const update of data.result) {
+                if (update.callback_query) {
+                    await handleCallback(update.callback_query);
+                    continue;
+                }
+
                 const msg = update.message;
                 if (!msg) continue;
 
                 // ✅ Lógica de Respuesta Proxy: Si un mensaje en el grupo proxy es respuesta a una solicitud nuestra
-                if (String(msg.chat.id) === PROXY_GROUP_ID && msg.reply_to_message) {
+                if (PROXY_GROUP_ID && String(msg.chat.id) === String(PROXY_GROUP_ID) && msg.reply_to_message) {
                     const originalRequester = proxyRequests.get(String(msg.reply_to_message.message_id));
                     if (originalRequester) {
                         const replyText = msg.text || (msg.caption || "<i>Respuesta sin texto (archivo/imagen)</i>");
                         await sendMessage(originalRequester, `✅ <b>RESPUESTA EXTERNA RECIBIDA:</b>\n\n${replyText}`);
-                        // No borramos del map por si el bot externo envía varias respuestas al mismo comando
                     }
-                }
-
-                if (update.callback_query) {
-                    await handleCallback(update.callback_query);
                 }
 
                 if (msg.text) await handleCommand(msg);
