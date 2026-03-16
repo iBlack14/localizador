@@ -59,6 +59,7 @@ const RENIEC_FILE_PATH = process.env.RENIEC_FILE_PATH || path.join(__dirname, 'r
 const RENIEC_DEFAULT_LIMIT = Number(process.env.RENIEC_DEFAULT_LIMIT) || 5;
 const RENIEC_MAX_LIMIT = 50;
 
+let botMe = null; // ✅ Datos del bot (username, etc.)
 let offset = 0;
 let visitCount = 0;
 let startTime = new Date();
@@ -68,6 +69,9 @@ let conflictCount = 0;  // Contador de conflictos consecutivos
 const visitorStats = {}; // Estadísticas por país
 const linkHistory = [];
 const reniecLimitByChat = new Map();
+const proxyRequests = new Map(); // ✅ Para rastrear consultas externas: id_mensaje -> original_chat_id
+const pendingActions = new Map(); // ✅ Para esperar entrada de texto tras pulsar botón
+const PROXY_GROUP_ID = process.env.PROXY_GROUP_ID; // ✅ ID del grupo de doxeo externo
 
 const app = express();
 app.use(cors());
@@ -267,25 +271,123 @@ async function runReniecQueryRows({ chatId, queryLabel, sql, params }) {
 }
 
 
+async function sendMainMenu(chatId, userName) {
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: "🆔 CONSULTA DNI", callback_data: "local_reniec" }],
+      [{ text: "🔗 GENERAR TRACKER", callback_data: "local_links" }],
+      [{ text: "👤 MI CUENTA", callback_data: "cmd_status" }, { text: "🎁 REFERIDOS", callback_data: "cmd_invite" }],
+      [{ text: "🛰️ CONSULTA EXTERNA (F)", callback_data: "cat_proxy" }]
+    ]
+  };
+
+  const welcomeText = `Hola, <b>${userName}</b>\n\n<b>[ PANEL DE COMANDOS ]</b>\n\nBienvenido a nuestro menú principal de comandos.\n\nPor favor, selecciona una opción según la categoría que deseas consultar o explorar.`;
+
+  try {
+    const imgBuffer = fs.readFileSync(COVER_PHOTO_PATH);
+    const formData = new FormData();
+    formData.append('chat_id', chatId);
+    formData.append('caption', welcomeText);
+    formData.append('parse_mode', 'HTML');
+    formData.append('reply_markup', JSON.stringify(keyboard));
+    formData.append('photo', new Blob([imgBuffer], { type: 'image/png' }), 'start.png');
+    await fetch(`${BASE_URL}/sendPhoto`, { method: 'POST', body: formData });
+  } catch (e) {
+    await sendMessage(chatId, welcomeText, { reply_markup: keyboard });
+  }
+}
+
+async function handleCallback(cb) {
+  const chatId = String(cb.message.chat.id);
+  const data = cb.data;
+  const userId = String(cb.from.id);
+
+  if (data === "local_reniec") {
+    pendingActions.set(userId, "local_reniec");
+    await sendMessage(chatId, `🆔 <b>CONSULTA RENIEC (Propia)</b>\n\n<code>Ingrese el DNI a consultar:</code>`);
+  } else if (data === "local_links") {
+    await sendMessage(chatId, `🔗 <b>GENERADOR DE TRACKERS</b>\n\nUsa los comandos directos:\n/tk, /yt, /d, /ig, /wa, /nx, /tg\n\nEjemplo: <code>/tk MiVideo</code>`);
+  } else if (data === "cat_proxy") {
+    pendingActions.set(userId, "proxy");
+    await sendMessage(chatId, `🛰️ <b>MODO PROXY (Externo)</b>\n\n<code>Ingrese el comando completo para el servidor externo:</code>\nEjemplo: <code>/tel 999888777</code>`);
+  } else if (data === "cmd_status") {
+    // Redirigir al comando status existente
+    msg.text = "/status";
+    await handleCommand(cb.message);
+  } else if (data === "cmd_invite") {
+    msg.text = "/invite";
+    await handleCommand(cb.message);
+  }
+  
+  await apiFetch('answerCallbackQuery', { callback_query_id: cb.id });
+}
+
 /* ====================================================
    COMANDOS DEL BOT
    ==================================================== */
 async function handleCommand(msg) {
     const chatId = String(msg.chat.id);
-    const textRaw = (msg.text || '').trim();
+    const userId = String(msg.from.id);
+    const textRaw = (msg.text || "").trim();
+    const partsRaw = textRaw.split(" ").filter(Boolean);
+    
+    // Detectar comando y limpiar el arroba si viene de un grupo (ej: /dni@bot -> /dni)
+    let command = (partsRaw[0] || "").toLowerCase();
+    if (command.includes("@")) {
+      command = command.split("@")[0];
+    }
+    
     const text = textRaw.toLowerCase();
-    const partsRaw = textRaw.split(' ').filter(Boolean);
-    const command = (partsRaw[0] || '').toLowerCase();
     const argsRaw = partsRaw.slice(1);
-    const from = msg.from?.first_name || 'Usuario';
-
-    console.log(`\n[📨 MENSAJE RECIBIDO]\n👤 Usuario: ${from}\n🔑 CHAT_ID: ${chatId}\n💬 Texto: ${textRaw}\n`);
+    const from = msg.from?.first_name || "Usuario";
+    const isGroup = msg.chat.type === "group" || msg.chat.type === "supergroup";
 
     let { data: user, error: userError } = await supabase
-        .from('bot_users')
-        .select('*')
-        .eq('chat_id', chatId)
-        .single();
+      .from("bot_users")
+      .select("*")
+      .eq("chat_id", userId)
+      .single();
+
+    if (userError && userError.code !== 'PGRST116') {
+        console.error("DB Error fetch user:", userError);
+    }
+
+    // ✅ MODO PROXY: Si el comando termina en 'f', lo enviamos al grupo externo
+    if (command.endsWith('f') && command.length > 2) {
+        if (!user) {
+            await sendMessage(chatId, `❌ No estás registrado. Escribe /start`);
+            return;
+        }
+        if (user.plan === 'credits' && userId !== ADMIN_CHAT_ID) {
+            if (user.credits < 2) {
+                await sendMessage(chatId, `🛑 <b>SALDO INSUFICIENTE</b>\nNecesitas 2 créditos para esta consulta proxy.`);
+                return;
+            }
+            await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', userId);
+        }
+
+        const realCommand = command.slice(0, -1); // Quita la 'f'
+        const fullMsg = `${realCommand} ${argsRaw.join(' ')}`;
+        
+        if (!PROXY_GROUP_ID) {
+            await sendMessage(chatId, `❌ Error: No se ha configurado el PROXY_GROUP_ID en el servidor.`);
+            return;
+        }
+
+        const res = await apiFetch('sendMessage', {
+            chat_id: PROXY_GROUP_ID,
+            text: fullMsg
+        });
+
+        if (res && res.ok) {
+            const groupMsgId = res.result.message_id;
+            proxyRequests.set(String(groupMsgId), chatId);
+            await sendMessage(chatId, `🛰️ <b>Consulta Proxy Enviada</b>\nEsperando respuesta del servidor externo...`);
+        } else {
+            await sendMessage(chatId, `❌ Error al enviar consulta al grupo externo.`);
+        }
+        return;
+    }
 
     if (userError && userError.code !== 'PGRST116') {
         console.error("DB Error fetch user:", userError);
@@ -301,12 +403,12 @@ async function handleCommand(msg) {
         }
 
         if (!user) {
-            const initPlan = chatId === ADMIN_CHAT_ID ? 'unlimited' : 'credits';
-            const initCredits = chatId === ADMIN_CHAT_ID ? 0 : 1;
+            const initPlan = userId === ADMIN_CHAT_ID ? 'unlimited' : 'credits';
+            const initCredits = userId === ADMIN_CHAT_ID ? 0 : 1;
 
             const { data: newUser, error: insertError } = await supabase
                 .from('bot_users')
-                .insert([{ chat_id: chatId, name: from, plan: initPlan, credits: initCredits }])
+                .insert([{ chat_id: userId, name: from, plan: initPlan, credits: initCredits }])
                 .select()
                 .single();
 
@@ -318,7 +420,7 @@ async function handleCommand(msg) {
             user = newUser;
             isNewUser = true;
 
-            if (refereeId && refereeId !== chatId) {
+            if (refereeId && refereeId !== userId) {
                 const { data: refUser } = await supabase.from('bot_users').select('credits').eq('chat_id', refereeId).single();
                 if (refUser) {
                     await supabase.from('bot_users').update({ credits: refUser.credits + 1 }).eq('chat_id', refereeId);
@@ -327,40 +429,65 @@ async function handleCommand(msg) {
             }
         }
 
-        let welcomeText = `🎵 <b>SecureTrack Pro</b>\n\nHola <b>${user.name}</b>! Bienvenido.\n`;
+        await sendMainMenu(chatId, user.name);
+        return;
+    } 
 
-        if (isNewUser) {
-            welcomeText += chatId === ADMIN_CHAT_ID ? `\n👑 <b>ADMINISTRADOR DETECTADO</b>\n` : `\n🎁 <b>REGALO:</b> 1 enlace gratis.\n`;
-        } else {
-            const planText = user.plan === 'unlimited' ? 'ILIMITADO ♾️' : `${user.credits} Crédito(s)`;
-            welcomeText += `\n💳 <b>Tu Saldo:</b> ${planText}\n`;
+    if (text === '/menu') {
+        await sendMainMenu(chatId, from);
+        return;
+    }
+
+    // ✅ Lógica de captura tras pulsar botón del menú
+    if (pendingActions.has(userId)) {
+        const category = pendingActions.get(userId);
+        pendingActions.delete(userId);
+
+        if (category === "local_reniec") {
+            if (user.plan === 'credits' && userId !== ADMIN_CHAT_ID) {
+                if (user.credits < 2) {
+                    await sendMessage(chatId, `🛑 <b>SALDO INSUFICIENTE</b>\nNecesitas 2 créditos para esta consulta.`);
+                    return;
+                }
+                await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', userId);
+            }
+            try {
+                const out = await runReniecQuery({
+                    chatId,
+                    queryLabel: `DNI ${textRaw}`,
+                    sql: `SELECT * FROM reniec WHERE dni = ? LIMIT 1`,
+                    params: [textRaw]
+                });
+                await sendMessage(chatId, out);
+            } catch (e) {
+                await sendMessage(chatId, `❌ Error en consulta: ${e.message}`);
+            }
+            return;
         }
 
-        welcomeText += `
-🎯 <b>Consultas RENIEC:</b>
-/dni [DNI] | /nom [Nombres] | /ap [Paterno] [Materno]
-
-🎯 <b>Generación Links:</b>
-/tk, /yt, /d, /ig, /wa, /nx, /tg
-
-👥 <b>Otros:</b>
-/myplan — Perfil | /invite — Gana créditos | /help — Ayuda
-
-⚠️ <i>Dudas: <b>https://t.me/Yxthc2</b></i>`;
-
-        try {
-            const imgBuffer = fs.readFileSync(COVER_PHOTO_PATH);
-            const formData = new FormData();
-            formData.append('chat_id', chatId);
-            formData.append('caption', welcomeText);
-            formData.append('parse_mode', 'HTML');
-            formData.append('photo', new Blob([imgBuffer], { type: 'image/png' }), 'start.png');
-            await fetch(`${BASE_URL}/sendPhoto`, { method: 'POST', body: formData });
-        } catch (e) {
-            await sendMessage(chatId, welcomeText);
+        if (category === "proxy" || category.startsWith("cat_")) {
+            if (user.plan === 'credits' && userId !== ADMIN_CHAT_ID) {
+                if (user.credits < 2) {
+                    await sendMessage(chatId, `🛑 <b>SALDO INSUFICIENTE</b>\nNecesitas 2 créditos para esta consulta.`);
+                    return;
+                }
+                await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', userId);
+            }
+            if (!PROXY_GROUP_ID) {
+                await sendMessage(chatId, `❌ Error: No se ha configurado el PROXY_GROUP_ID.`);
+                return;
+            }
+            const res = await apiFetch('sendMessage', { chat_id: PROXY_GROUP_ID, text: textRaw });
+            if (res && res.ok) {
+                proxyRequests.set(String(res.result.message_id), chatId);
+                await sendMessage(chatId, `🛰️ <b>Consulta Enviada al Externo</b>\nEsperando respuesta...`);
+            }
+            return;
         }
+        return;
+    }
 
-    } else if (command === '/campos') {
+    if (command === '/campos') {
         const headers = ["DNI", "AP_PAT", "AP_MAT", "NOMBRES", "FECHA_NAC", "FCH_INSCRIPCION", "FCH_EMISION", "FCH_CADUCIDAD", "UBIGEO_NAC", "UBIGEO_DIR", "DIRECCION", "SEXO", "EST_CIVIL", "DIG_RUC", "MADRE", "PADRE"];
         await sendMessage(chatId,
             `🧾 <b>Columnas RENIEC (${headers.length})</b>\n` +
@@ -382,12 +509,12 @@ async function handleCommand(msg) {
             await sendMessage(chatId, `⚠️ <b>Uso:</b> /dni [8 dígitos]\nEj: <code>/dni 00890434</code>`);
             return;
         }
-        if (user.plan === 'credits' && chatId !== ADMIN_CHAT_ID) {
+        if (user.plan === 'credits' && userId !== ADMIN_CHAT_ID) {
             if (user.credits < 2) {
                 await sendMessage(chatId, `🛑 <b>SALDO INSUFICIENTE</b>\nNecesitas 2 créditos para esta consulta.`);
                 return;
             }
-            await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', chatId);
+            await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', userId);
         }
         try {
             const out = await runReniecQuery({
@@ -407,12 +534,12 @@ async function handleCommand(msg) {
             await sendMessage(chatId, `⚠️ <b>Uso:</b> /nom [nombres]\nEj: <code>/nom ALEXANDER</code>`);
             return;
         }
-        if (user.plan === 'credits' && chatId !== ADMIN_CHAT_ID) {
+        if (user.plan === 'credits' && userId !== ADMIN_CHAT_ID) {
             if (user.credits < 2) {
                 await sendMessage(chatId, `🛑 <b>SALDO INSUFICIENTE</b>\nNecesitas 2 créditos para esta consulta.`);
                 return;
             }
-            await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', chatId);
+            await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', userId);
         }
         try {
             const out = await runReniecQuery({
@@ -433,12 +560,12 @@ async function handleCommand(msg) {
             await sendMessage(chatId, `⚠️ <b>Uso:</b> /ap [apellido_paterno] [apellido_materno]\nEj: <code>/ap SALAS AMASIFUEN</code>`);
             return;
         }
-        if (user.plan === 'credits' && chatId !== ADMIN_CHAT_ID) {
+        if (user.plan === 'credits' && userId !== ADMIN_CHAT_ID) {
             if (user.credits < 2) {
                 await sendMessage(chatId, `🛑 <b>SALDO INSUFICIENTE</b>\nNecesitas 2 créditos para esta consulta.`);
                 return;
             }
-            await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', chatId);
+            await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', userId);
         }
         try {
             let sql = `SELECT * FROM reniec WHERE ap_pat LIKE ? LIMIT 50`;
@@ -464,12 +591,12 @@ async function handleCommand(msg) {
             await sendMessage(chatId, `⚠️ <b>Uso:</b> /fnac [dd/mm/yyyy]\nEj: <code>/fnac 27/06/1968</code>`);
             return;
         }
-        if (user.plan === 'credits' && chatId !== ADMIN_CHAT_ID) {
+        if (user.plan === 'credits' && userId !== ADMIN_CHAT_ID) {
             if (user.credits < 2) {
                 await sendMessage(chatId, `🛑 <b>SALDO INSUFICIENTE</b>\nNecesitas 2 créditos para esta consulta.`);
                 return;
             }
-            await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', chatId);
+            await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', userId);
         }
         try {
             const out = await runReniecQuery({
@@ -491,12 +618,12 @@ async function handleCommand(msg) {
             return;
         }
         const isCode = /^\d{6}$/.test(qRaw);
-        if (user.plan === 'credits' && chatId !== ADMIN_CHAT_ID) {
+        if (user.plan === 'credits' && userId !== ADMIN_CHAT_ID) {
             if (user.credits < 2) {
                 await sendMessage(chatId, `🛑 <b>SALDO INSUFICIENTE</b>\nNecesitas 2 créditos para esta consulta.`);
                 return;
             }
-            await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', chatId);
+            await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', userId);
         }
         try {
             const out = await runReniecQuery({
@@ -518,12 +645,12 @@ async function handleCommand(msg) {
             await sendMessage(chatId, `⚠️ <b>Uso:</b> /direccion [texto]\nEj: <code>/direccion MANCO INCA</code>`);
             return;
         }
-        if (user.plan === 'credits' && chatId !== ADMIN_CHAT_ID) {
+        if (user.plan === 'credits' && userId !== ADMIN_CHAT_ID) {
             if (user.credits < 2) {
                 await sendMessage(chatId, `🛑 <b>SALDO INSUFICIENTE</b>\nNecesitas 2 créditos para esta consulta.`);
                 return;
             }
-            await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', chatId);
+            await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', userId);
         }
         try {
             const out = await runReniecQuery({
@@ -595,12 +722,12 @@ async function handleCommand(msg) {
             return;
         }
 
-        if (user.plan === 'credits' && chatId !== ADMIN_CHAT_ID) {
+        if (user.plan === 'credits' && userId !== ADMIN_CHAT_ID) {
             if (user.credits < 2) {
                 await sendMessage(chatId, `🛑 <b>SALDO INSUFICIENTE</b>\nNecesitas 2 créditos para este export.`);
                 return;
             }
-            await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', chatId);
+            await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', userId);
         }
 
         try {
@@ -642,7 +769,7 @@ async function handleCommand(msg) {
         );
 
     } else if (text === '/users') {
-        if (chatId !== ADMIN_CHAT_ID) return;
+        if (userId !== ADMIN_CHAT_ID) return;
         let msg = `👥 <b>Lista de Usuarios Autorizados</b>\n\n`;
         const { data: users, error } = await supabase.from('bot_users').select('*').order('created_at', { ascending: false });
         if (error || !users || users.length === 0) {
@@ -656,7 +783,7 @@ async function handleCommand(msg) {
         await sendMessage(chatId, msg);
 
     } else if (text.startsWith('/broadcast')) {
-        if (chatId !== ADMIN_CHAT_ID) return;
+        if (userId !== ADMIN_CHAT_ID) return;
         const bMsg = textRaw.substring(10).trim();
         if (!bMsg) {
             await sendMessage(chatId, `⚠️ <b>Uso:</b> /broadcast [mensaje]`);
@@ -704,16 +831,13 @@ async function handleCommand(msg) {
           `🔗 <b>Generación Trackers:</b>\n /tk, /yt, /d, /ig, /wa, /nx, /tg\n\n` +
           `👤 <b>Gestión Cuenta:</b>\n /myplan, /invite, /status\n`;
 
-        if (chatId === ADMIN_CHAT_ID) {
+        if (userId === ADMIN_CHAT_ID) {
           helpMsg += `\n👑 <b>Admin:</b>\n /users, /adduser, /addcredits, /setplan, /broadcast`;
         }
         await sendMessage(chatId, helpMsg);
 
     } else if (text === "/invite") {
-        let myName = "TuBot";
-        if (typeof me !== "undefined" && me.result) {
-          myName = me.result.username;
-        }
+        const myName = botMe ? botMe.username : "bot";
         const refLink = `https://t.me/${myName}?start=REF${chatId}`;
         await sendMessage(chatId,
             `🎁 <b>Programa de Referidos VIP</b>\n\n` +
@@ -738,16 +862,16 @@ async function handleCommand(msg) {
             return;
         }
 
-        if (user.plan === 'credits' && chatId !== ADMIN_CHAT_ID) {
+        if (user.plan === 'credits' && userId !== ADMIN_CHAT_ID) {
             if (user.credits < 3) {
                 await sendMessage(chatId, `🛑 <b>SALDO INSUFICIENTE</b>\nNecesitas 3 créditos para generar un enlace.`);
                 return;
             }
-            await supabase.from('bot_users').update({ credits: user.credits - 3 }).eq('chat_id', chatId);
+            await supabase.from('bot_users').update({ credits: user.credits - 3 }).eq('chat_id', userId);
         }
 
         const target = argsRaw.join(' ').trim() || `V${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-        await supabase.from('bot_links').insert([{ target_id: target, chat_id: chatId }]);
+        await supabase.from('bot_links').insert([{ target_id: target, chat_id: userId }]);
 
         const longUrl = buildTrackingUrl(target, type);
         const shortUrl = await shortenUrl(longUrl);
@@ -772,14 +896,14 @@ async function handleCommand(msg) {
         );
 
     } else if (command === '/adduser') {
-        if (chatId !== ADMIN_CHAT_ID) return;
+        if (userId !== ADMIN_CHAT_ID) return;
         const [tId, tName] = argsRaw;
         if (!tId || !tName) { await sendMessage(chatId, `⚠️ Uso: /adduser [chat_id] [nombre]`); return; }
         const { error } = await supabase.from('bot_users').insert([{ chat_id: tId, name: tName, plan: 'credits', credits: 0 }]);
         await sendMessage(chatId, error ? `❌ Error: ${error.message}` : `✅ Usuario ${tName} agregado.`);
 
     } else if (command === '/addcredits') {
-        if (chatId !== ADMIN_CHAT_ID) return;
+        if (userId !== ADMIN_CHAT_ID) return;
         const [tId, amount] = argsRaw;
         if (!tId || !amount) { await sendMessage(chatId, `⚠️ Uso: /addcredits [chat_id] [cantidad]`); return; }
         const { data: targetUser } = await supabase.from('bot_users').select('credits').eq('chat_id', tId).single();
@@ -789,7 +913,7 @@ async function handleCommand(msg) {
         await sendMessage(chatId, `✅ Créditos actualizados: ${newCredits}`);
 
     } else if (command === '/setplan') {
-        if (chatId !== ADMIN_CHAT_ID) return;
+        if (userId !== ADMIN_CHAT_ID) return;
         const [tId, pType] = argsRaw;
         if (!tId || (pType !== 'unlimited' && pType !== 'credits')) { await sendMessage(chatId, `⚠️ Uso: /setplan [id] [unlimited|credits]`); return; }
         await supabase.from('bot_users').update({ plan: pType }).eq('chat_id', tId);
@@ -883,7 +1007,24 @@ async function poll() {
         if (data && data.result && data.result.length > 0) {
             offset = data.result[data.result.length - 1].update_id + 1;
             for (const update of data.result) {
-                if (update.message?.text) await handleCommand(update.message);
+                const msg = update.message;
+                if (!msg) continue;
+
+                // ✅ Lógica de Respuesta Proxy: Si un mensaje en el grupo proxy es respuesta a una solicitud nuestra
+                if (String(msg.chat.id) === PROXY_GROUP_ID && msg.reply_to_message) {
+                    const originalRequester = proxyRequests.get(String(msg.reply_to_message.message_id));
+                    if (originalRequester) {
+                        const replyText = msg.text || (msg.caption || "<i>Respuesta sin texto (archivo/imagen)</i>");
+                        await sendMessage(originalRequester, `✅ <b>RESPUESTA EXTERNA RECIBIDA:</b>\n\n${replyText}`);
+                        // No borramos del map por si el bot externo envía varias respuestas al mismo comando
+                    }
+                }
+
+                if (update.callback_query) {
+                    await handleCallback(update.callback_query);
+                }
+
+                if (msg.text) await handleCommand(msg);
             }
         }
     } catch (e) { console.error('[POLL ERROR]', e.message); }
@@ -891,10 +1032,11 @@ async function poll() {
 }
 
 async function main() {
-    const me = await apiFetch('getMe');
-    if (!me?.ok) { console.error('❌ Error de conexión con Telegram.'); process.exit(1); }
+    const res = await apiFetch('getMe');
+    if (!res?.ok) { console.error('❌ Error de conexión con Telegram.'); process.exit(1); }
+    botMe = res.result;
     await apiFetch('deleteWebhook', { drop_pending_updates: true });
-    app.listen(PORT, () => console.log(`🌍 Servidor activo en ${PORT} | Bot: @${me.result.username}`));
+    app.listen(PORT, () => console.log(`🌍 Servidor activo en ${PORT} | Bot: @${botMe.username}`));
     poll();
 }
 
