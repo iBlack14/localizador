@@ -187,21 +187,65 @@ async function runReniecQuery({ chatId, queryLabel, sql, params }) {
         const limitedRows = rows.slice(0, limit);
 
         if (limitedRows.length === 0) {
-            return `🔎 <b>${escapeHtml(queryLabel)}</b>\nSin resultados.\n\n⏱️ Tiempo: <b>${elapsed} ms</b>`;
+            return `🔎 <b>CONSULTA RENIEC</b>\n<b>Busqueda:</b> <code>${escapeHtml(queryLabel)}</code>\n\n❌ SIN RESULTADOS EN BASE DE DATOS.`;
         }
 
-        const formatted = limitedRows.map((r, i) => {
-            const dni = escapeHtml(r.dni || '');
+        const formatted = limitedRows.map((r) => {
+            const dni = escapeHtml(r.dni || '00000000');
+            const digito = dni.length === 8 ? dni.split('').reduce((a, b, i) => a + (parseInt(b) * [3, 2, 7, 6, 5, 4, 3, 2][i]), 0) % 11 : '-';
+            const digVerif = [6, 7, 8, 9, 0, 1, 1, 2, 3, 4, 5][digito] || '0';
+
             const apPat = escapeHtml(r.ap_pat || '');
             const apMat = escapeHtml(r.ap_mat || '');
             const nombres = escapeHtml(r.nombres || '');
-            const fn = escapeHtml(r.fecha_nac || '');
-            const ubigeo = escapeHtml(r.ubigeo_dir || '');
-            const dir = escapeHtml(shortText(r.direccion || '', 55));
-            return `${i + 1}. <code>${dni}</code> | ${apPat} ${apMat} ${nombres}\n   FN: ${fn} | UB: ${ubigeo}\n   DIR: ${dir}`;
-        }).join('\n');
+            const fnac = r.fecha_nac || '01/01/1900';
+            
+            // Calculo de Edad aproximado
+            let edad = 'N/A';
+            try {
+                const parts = fnac.split('/');
+                if(parts.length === 3) {
+                    const birthDate = new Date(parts[2], parts[1]-1, parts[0]);
+                    const ageDifMs = Date.now() - birthDate.getTime();
+                    const ageDate = new Date(ageDifMs);
+                    edad = Math.abs(ageDate.getUTCFullYear() - 1970);
+                }
+            } catch(e){}
 
-        return `🔎 <b>${escapeHtml(queryLabel)}</b>\nResultados: <b>${limitedRows.length}</b> (límite: ${limit})\n\n${formatted}\n\n⏱️ Tiempo: <b>${elapsed} ms</b> (MySQL)`;
+            const genero = (r.sexo || '').toUpperCase().includes('MASC') ? 'MASCULINO' : 'FEMENINO';
+            const ubigeoDir = r.ubigeo_dir || '------';
+            const direccion = escapeHtml(r.direccion || 'NO REGISTRADA');
+            const estCivil = escapeHtml((r.est_civil || 'SOLTERO').toUpperCase());
+            const fInscr = escapeHtml(r.fch_inscripcion || '--/--/----');
+            const fEmis = escapeHtml(r.fch_emision || '--/--/----');
+            const fCaduc = escapeHtml(r.fch_caducidad || '--/--/----');
+            const madre = escapeHtml(r.madre || 'NO REGISTRADO');
+            const padre = escapeHtml(r.padre || 'NO REGISTRADO');
+
+            return `<b>DNI ⇒</b> <code>${dni}</code> - ${digVerif}\n` +
+                   `<b>NOMBRES ⇒</b> ${nombres}\n` +
+                   `<b>APELLIDOS ⇒</b> ${apPat} ${apMat}\n` +
+                   `<b>GENERO ⇒</b> ${genero}\n\n` +
+                   `[ 🎂 ] <b>NACIMIENTO</b>\n\n` +
+                   `<b>FECHA NACIMIENTO ⇒</b> ${fnac}\n` +
+                   `<b>EDAD ⇒</b> ${edad} AÑOS\n` +
+                   `<b>UBIGEO ⇒</b> ${ubigeoDir}\n\n` +
+                   `[ 📋 ] <b>INFORMACION GENERAL</b>\n\n` +
+                   `<b>ESTADO CIVIL ⇒</b> ${estCivil}\n` +
+                   `<b>FECHA INSCRIPCION ⇒</b> ${fInscr}\n` +
+                   `<b>FECHA EMISION ⇒</b> ${fEmis}\n` +
+                   `<b>FECHA CADUCIDAD ⇒</b> ${fCaduc}\n` +
+                   `<b>PADRE ⇒</b> ${padre}\n` +
+                   `<b>MADRE ⇒</b> ${madre}\n\n` +
+                   `[ 🏠 ] <b>DOMICILIO</b>\n\n` +
+                   `<b>DIRECCION ⇒</b> ${direccion}\n` +
+                   `<b>UBIGEO ⇒</b> ${ubigeoDir}\n` +
+                   `────────────────────`;
+        }).join('\n\n');
+
+        return `${formatted}\n\n` +
+               `<b>SISTEMA SECURETRACK PRO</b>\n` +
+               `⚡ <b>TIEMPO:</b> <code>${elapsed} ms</code>`;
     } catch (e) {
         throw new Error(`Error SQL: ${e.message}`);
     }
