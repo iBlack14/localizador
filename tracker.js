@@ -1,5 +1,5 @@
 /* ============================================================
-   SECURETRACK PRO — TRACKER ENGINE
+   DARK BOT — TRACKER ENGINE
    Data Capture · Fingerprinting · Telegram Integration
    ============================================================
 

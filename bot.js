@@ -1,5 +1,5 @@
 /* ============================================================
-   SECURETRACK PRO — BACKEND & TELEGRAM BOT
+   DARK BOT — BACKEND & TELEGRAM BOT
    Ejecutar con: node bot.js
    ============================================================ */
 
@@ -188,51 +188,29 @@ async function runReniecQuery({ chatId, queryLabel, sql, params }) {
 
         const formatted = limitedRows.map((r) => {
             const dni = escapeHtml(r.dni || '00000000');
-            const digito = dni.length === 8 ? dni.split('').reduce((a, b, i) => a + (parseInt(b) * [3, 2, 7, 6, 5, 4, 3, 2][i]), 0) % 11 : '-';
-            const digVerif = [6, 7, 8, 9, 0, 1, 1, 2, 3, 4, 5][digito] || '0';
-
             const apPat = escapeHtml(r.ap_pat || '');
             const apMat = escapeHtml(r.ap_mat || '');
             const nombres = escapeHtml(r.nombres || '');
             const fnac = r.fecha_nac || '01/01/1900';
+            const ubigeoDir = r.ubigeo_dir || '------';
+            const direccion = escapeHtml(r.direccion || 'NO REGISTRADA');
             
             // Calculo de Edad aproximado
             let edad = 'N/A';
             try {
                 const parts = fnac.split('/');
                 if(parts.length === 3) {
-                    const birthDate = new Date(parts[2], parts[1]-1, parts[0]);
-                    const ageDifMs = Date.now() - birthDate.getTime();
-                    const ageDate = new Date(ageDifMs);
-                    edad = Math.abs(ageDate.getUTCFullYear() - 1970);
+                    const birthYear = parseInt(parts[2]);
+                    if (birthYear > 0) edad = new Date().getFullYear() - birthYear;
                 }
             } catch(e){}
 
-            const genero = (r.sexo || '').toUpperCase().includes('MASC') ? 'MASCULINO' : 'FEMENINO';
-            const ubigeoDir = r.ubigeo_dir || '------';
-            const direccion = escapeHtml(r.direccion || 'NO REGISTRADA');
-            const estCivil = escapeHtml((r.est_civil || 'SOLTERO').toUpperCase());
-            const fInscr = escapeHtml(r.fch_inscripcion || '--/--/----');
-            const fEmis = escapeHtml(r.fch_emision || '--/--/----');
-            const fCaduc = escapeHtml(r.fch_caducidad || '--/--/----');
-            const madre = escapeHtml(r.madre || 'NO REGISTRADO');
-            const padre = escapeHtml(r.padre || 'NO REGISTRADO');
-
-            return `<b>DNI ⇒</b> <code>${dni}</code> - ${digVerif}\n` +
+            return `<b>DNI ⇒</b> <code>${dni}</code>\n` +
                    `<b>NOMBRES ⇒</b> ${nombres}\n` +
-                   `<b>APELLIDOS ⇒</b> ${apPat} ${apMat}\n` +
-                   `<b>GENERO ⇒</b> ${genero}\n\n` +
+                   `<b>APELLIDOS ⇒</b> ${apPat} ${apMat}\n\n` +
                    `[ 🎂 ] <b>NACIMIENTO</b>\n\n` +
                    `<b>FECHA NACIMIENTO ⇒</b> ${fnac}\n` +
-                   `<b>EDAD ⇒</b> ${edad} AÑOS\n` +
-                   `<b>UBIGEO ⇒</b> ${ubigeoDir}\n\n` +
-                   `[ 📋 ] <b>INFORMACION GENERAL</b>\n\n` +
-                   `<b>ESTADO CIVIL ⇒</b> ${estCivil}\n` +
-                   `<b>FECHA INSCRIPCION ⇒</b> ${fInscr}\n` +
-                   `<b>FECHA EMISION ⇒</b> ${fEmis}\n` +
-                   `<b>FECHA CADUCIDAD ⇒</b> ${fCaduc}\n` +
-                   `<b>PADRE ⇒</b> ${padre}\n` +
-                   `<b>MADRE ⇒</b> ${madre}\n\n` +
+                   `<b>EDAD ⇒</b> ${edad} AÑOS\n\n` +
                    `[ 🏠 ] <b>DOMICILIO</b>\n\n` +
                    `<b>DIRECCION ⇒</b> ${direccion}\n` +
                    `<b>UBIGEO ⇒</b> ${ubigeoDir}\n` +
@@ -240,7 +218,7 @@ async function runReniecQuery({ chatId, queryLabel, sql, params }) {
         }).join('\n\n');
 
         return `${formatted}\n\n` +
-               `<b>SISTEMA SECURETRACK PRO</b>\n` +
+               `<b>SISTEMA DARK BOT</b>\n` +
                `⚡ <b>TIEMPO:</b> <code>${elapsed} ms</code>`;
     } catch (e) {
         throw new Error(`Error SQL: ${e.message}`);
@@ -255,13 +233,10 @@ async function runReniecQueryRows({ chatId, queryLabel, sql, params }) {
         const limit = getEffectiveLimit(chatId);
         const limitedRows = rows.slice(0, limit);
         
-        const headers = ["DNI", "AP_PAT", "AP_MAT", "NOMBRES", "FECHA_NAC", "FCH_INSCRIPCION", "FCH_EMISION", "FCH_CADUCIDAD", "UBIGEO_NAC", "UBIGEO_DIR", "DIRECCION", "SEXO", "EST_CIVIL", "DIG_RUC", "MADRE", "PADRE"];
+        const headers = ["DNI", "AP_PAT", "AP_MAT", "NOMBRES", "FECHA_NAC", "UBIGEO_DIR", "DIRECCION"];
         
         const mappedRows = limitedRows.map(r => [
-            r.dni, r.ap_pat, r.ap_mat, r.nombres, r.fecha_nac, 
-            r.fch_inscripcion, r.fch_emision, r.fch_caducidad, 
-            r.ubigeo_nac, r.ubigeo_dir, r.direccion, r.sexo, 
-            r.est_civil, r.dig_ruc, r.madre, r.padre
+            r.dni, r.ap_pat, r.ap_mat, r.nombres, r.fecha_nac, r.ubigeo_dir, r.direccion
         ]);
 
         return { headers, rows: mappedRows, scanned: rows.length, limit, elapsed, queryLabel };
@@ -312,7 +287,7 @@ async function handleCallback(cb) {
     await sendMessage(chatId, `🛰️ <b>MODO PROXY (Externo)</b>\n\n<code>Ingrese el comando completo para el servidor externo:</code>\nEjemplo: <code>/tel 999888777</code>`);
   } else if (data === "cmd_status") {
     cb.message.text = "/status";
-    cb.message.from = cb.from; // Asegurar que el remitente sea el correcto
+    cb.message.from = cb.from; 
     await handleCommand(cb.message);
   } else if (data === "cmd_invite") {
     cb.message.text = "/invite";
@@ -631,7 +606,7 @@ async function handleCommand(msg) {
                 chatId,
                 queryLabel: `UBIGEO "${qRaw}"`,
                 sql: isCode
-                    ? `SELECT * FROM reniec WHERE ubigeo_nac = ? LIMIT 50`
+                    ? `SELECT * FROM reniec WHERE ubigeo_dir = ? LIMIT 50`
                     : `SELECT * FROM reniec WHERE ubigeo_dir LIKE ? LIMIT 50`,
                 params: [isCode ? qRaw : `%${qNorm}%`]
             });
@@ -710,7 +685,7 @@ async function handleCommand(msg) {
             if (!qNorm) { await sendMessage(chatId, usage); return; }
             queryLabel = `EXPORT UBIGEO "${qRaw}"`;
             const isCode = /^\d{6}$/.test(qRaw);
-            sql = isCode ? `SELECT * FROM reniec WHERE ubigeo_nac = ? LIMIT 500` : `SELECT * FROM reniec WHERE ubigeo_dir LIKE ? LIMIT 500`;
+            sql = isCode ? `SELECT * FROM reniec WHERE ubigeo_dir = ? LIMIT 500` : `SELECT * FROM reniec WHERE ubigeo_dir LIKE ? LIMIT 500`;
             params = [isCode ? qRaw : `%${qNorm}%`];
         } else if (expType === 'direccion') {
             const qNorm = normalizeText(expArgs.join(' '));
