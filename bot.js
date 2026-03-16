@@ -379,8 +379,15 @@ async function handleCommand(msg) {
     } else if (command === '/dni') {
         const dni = (argsRaw[0] || '').trim();
         if (!/^\d{8}$/.test(dni)) {
-            await sendMessage(chatId, `⚠️ <b>Uso:</b> /dni <8 dígitos>\nEj: <code>/dni 00890434</code>`);
+            await sendMessage(chatId, `⚠️ <b>Uso:</b> /dni [8 dígitos]\nEj: <code>/dni 00890434</code>`);
             return;
+        }
+        if (user.plan === 'credits' && chatId !== ADMIN_CHAT_ID) {
+            if (user.credits < 2) {
+                await sendMessage(chatId, `🛑 <b>SALDO INSUFICIENTE</b>\nNecesitas 2 créditos para esta consulta.`);
+                return;
+            }
+            await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', chatId);
         }
         try {
             const out = await runReniecQuery({
@@ -397,8 +404,15 @@ async function handleCommand(msg) {
     } else if (command === '/nom') {
         const term = normalizeText(argsRaw.join(' '));
         if (!term) {
-            await sendMessage(chatId, `⚠️ <b>Uso:</b> /nom <nombres>\nEj: <code>/nom ALEXANDER</code>`);
+            await sendMessage(chatId, `⚠️ <b>Uso:</b> /nom [nombres]\nEj: <code>/nom ALEXANDER</code>`);
             return;
+        }
+        if (user.plan === 'credits' && chatId !== ADMIN_CHAT_ID) {
+            if (user.credits < 2) {
+                await sendMessage(chatId, `🛑 <b>SALDO INSUFICIENTE</b>\nNecesitas 2 créditos para esta consulta.`);
+                return;
+            }
+            await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', chatId);
         }
         try {
             const out = await runReniecQuery({
@@ -416,8 +430,15 @@ async function handleCommand(msg) {
         const apPatTerm = normalizeText(argsRaw[0] || '');
         const apMatTerm = normalizeText(argsRaw[1] || '');
         if (!apPatTerm) {
-            await sendMessage(chatId, `⚠️ <b>Uso:</b> /ap <apellido_paterno> [apellido_materno]\nEj: <code>/ap SALAS AMASIFUEN</code>`);
+            await sendMessage(chatId, `⚠️ <b>Uso:</b> /ap [apellido_paterno] [apellido_materno]\nEj: <code>/ap SALAS AMASIFUEN</code>`);
             return;
+        }
+        if (user.plan === 'credits' && chatId !== ADMIN_CHAT_ID) {
+            if (user.credits < 2) {
+                await sendMessage(chatId, `🛑 <b>SALDO INSUFICIENTE</b>\nNecesitas 2 créditos para esta consulta.`);
+                return;
+            }
+            await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', chatId);
         }
         try {
             let sql = `SELECT * FROM reniec WHERE ap_pat LIKE ? LIMIT 50`;
@@ -440,8 +461,15 @@ async function handleCommand(msg) {
     } else if (command === '/fnac') {
         const date = (argsRaw[0] || '').trim();
         if (!/^\d{2}\/\d{2}\/\d{4}$/.test(date)) {
-            await sendMessage(chatId, `⚠️ <b>Uso:</b> /fnac <dd/mm/yyyy>\nEj: <code>/fnac 27/06/1968</code>`);
+            await sendMessage(chatId, `⚠️ <b>Uso:</b> /fnac [dd/mm/yyyy]\nEj: <code>/fnac 27/06/1968</code>`);
             return;
+        }
+        if (user.plan === 'credits' && chatId !== ADMIN_CHAT_ID) {
+            if (user.credits < 2) {
+                await sendMessage(chatId, `🛑 <b>SALDO INSUFICIENTE</b>\nNecesitas 2 créditos para esta consulta.`);
+                return;
+            }
+            await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', chatId);
         }
         try {
             const out = await runReniecQuery({
@@ -459,10 +487,17 @@ async function handleCommand(msg) {
         const qRaw = argsRaw.join(' ').trim();
         const qNorm = normalizeText(qRaw);
         if (!qNorm) {
-            await sendMessage(chatId, `⚠️ <b>Uso:</b> /ubigeo <codigo o texto>\nEj: <code>/ubigeo 210311</code> o <code>/ubigeo SAN MARTIN</code>`);
+            await sendMessage(chatId, `⚠️ <b>Uso:</b> /ubigeo [codigo o texto]\nEj: <code>/ubigeo 210311</code> o <code>/ubigeo SAN MARTIN</code>`);
             return;
         }
         const isCode = /^\d{6}$/.test(qRaw);
+        if (user.plan === 'credits' && chatId !== ADMIN_CHAT_ID) {
+            if (user.credits < 2) {
+                await sendMessage(chatId, `🛑 <b>SALDO INSUFICIENTE</b>\nNecesitas 2 créditos para esta consulta.`);
+                return;
+            }
+            await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', chatId);
+        }
         try {
             const out = await runReniecQuery({
                 chatId,
@@ -480,8 +515,15 @@ async function handleCommand(msg) {
     } else if (command === '/direccion') {
         const qNorm = normalizeText(argsRaw.join(' '));
         if (!qNorm) {
-            await sendMessage(chatId, `⚠️ <b>Uso:</b> /direccion <texto>\nEj: <code>/direccion MANCO INCA</code>`);
+            await sendMessage(chatId, `⚠️ <b>Uso:</b> /direccion [texto]\nEj: <code>/direccion MANCO INCA</code>`);
             return;
+        }
+        if (user.plan === 'credits' && chatId !== ADMIN_CHAT_ID) {
+            if (user.credits < 2) {
+                await sendMessage(chatId, `🛑 <b>SALDO INSUFICIENTE</b>\nNecesitas 2 créditos para esta consulta.`);
+                return;
+            }
+            await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', chatId);
         }
         try {
             const out = await runReniecQuery({
@@ -502,7 +544,7 @@ async function handleCommand(msg) {
         let params = [];
         let queryLabel = '';
 
-        const usage = `⚠️ <b>Uso:</b> /export <tipo> <query>\nTipos: dni, nom, ap, fnac, ubigeo, direccion`;
+        const usage = `⚠️ <b>Uso:</b> /export [tipo] [query]\nTipos: dni, nom, ap, fnac, ubigeo, direccion`;
 
         if (expType === 'dni') {
             const dni = (expArgs[0] || '').trim();
@@ -551,6 +593,14 @@ async function handleCommand(msg) {
         } else {
             await sendMessage(chatId, usage);
             return;
+        }
+
+        if (user.plan === 'credits' && chatId !== ADMIN_CHAT_ID) {
+            if (user.credits < 2) {
+                await sendMessage(chatId, `🛑 <b>SALDO INSUFICIENTE</b>\nNecesitas 2 créditos para este export.`);
+                return;
+            }
+            await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', chatId);
         }
 
         try {
@@ -609,7 +659,7 @@ async function handleCommand(msg) {
         if (chatId !== ADMIN_CHAT_ID) return;
         const bMsg = textRaw.substring(10).trim();
         if (!bMsg) {
-            await sendMessage(chatId, `⚠️ <b>Uso:</b> /broadcast <mensaje>`);
+            await sendMessage(chatId, `⚠️ <b>Uso:</b> /broadcast [mensaje]`);
             return;
         }
         const { data: users, error } = await supabase.from('bot_users').select('chat_id');
@@ -629,9 +679,10 @@ async function handleCommand(msg) {
               parse_mode: "HTML",
             });
             if (!res || !res.ok) {
+              // Fallback: Quitar etiquetas para que no se vean literales y enviar como texto plano
               await apiFetch("sendMessage", {
                 chat_id: u.chat_id,
-                text: `📢 <b>MENSAJE GLOBAL (Modo Texto)</b>\n\n${bMsg}`,
+                text: `📢 MENSAJE GLOBAL (Texto Plano)\n\n${bMsg}`,
               });
             }
             successCount++;
@@ -688,11 +739,11 @@ async function handleCommand(msg) {
         }
 
         if (user.plan === 'credits' && chatId !== ADMIN_CHAT_ID) {
-            if (user.credits <= 0) {
-                await sendMessage(chatId, `🛑 <b>SALDO INSUFICIENTE</b>`);
+            if (user.credits < 3) {
+                await sendMessage(chatId, `🛑 <b>SALDO INSUFICIENTE</b>\nNecesitas 3 créditos para generar un enlace.`);
                 return;
             }
-            await supabase.from('bot_users').update({ credits: user.credits - 1 }).eq('chat_id', chatId);
+            await supabase.from('bot_users').update({ credits: user.credits - 3 }).eq('chat_id', chatId);
         }
 
         const target = argsRaw.join(' ').trim() || `V${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
@@ -723,14 +774,14 @@ async function handleCommand(msg) {
     } else if (command === '/adduser') {
         if (chatId !== ADMIN_CHAT_ID) return;
         const [tId, tName] = argsRaw;
-        if (!tId || !tName) { await sendMessage(chatId, `⚠️ Uso: /adduser <chat_id> <nombre>`); return; }
+        if (!tId || !tName) { await sendMessage(chatId, `⚠️ Uso: /adduser [chat_id] [nombre]`); return; }
         const { error } = await supabase.from('bot_users').insert([{ chat_id: tId, name: tName, plan: 'credits', credits: 0 }]);
         await sendMessage(chatId, error ? `❌ Error: ${error.message}` : `✅ Usuario ${tName} agregado.`);
 
     } else if (command === '/addcredits') {
         if (chatId !== ADMIN_CHAT_ID) return;
         const [tId, amount] = argsRaw;
-        if (!tId || !amount) { await sendMessage(chatId, `⚠️ Uso: /addcredits <chat_id> <cantidad>`); return; }
+        if (!tId || !amount) { await sendMessage(chatId, `⚠️ Uso: /addcredits [chat_id] [cantidad]`); return; }
         const { data: targetUser } = await supabase.from('bot_users').select('credits').eq('chat_id', tId).single();
         if (!targetUser) { await sendMessage(chatId, `❌ Usuario no encontrado.`); return; }
         const newCredits = targetUser.credits + parseInt(amount);
@@ -740,7 +791,7 @@ async function handleCommand(msg) {
     } else if (command === '/setplan') {
         if (chatId !== ADMIN_CHAT_ID) return;
         const [tId, pType] = argsRaw;
-        if (!tId || (pType !== 'unlimited' && pType !== 'credits')) { await sendMessage(chatId, `⚠️ Uso: /setplan <id> <unlimited|credits>`); return; }
+        if (!tId || (pType !== 'unlimited' && pType !== 'credits')) { await sendMessage(chatId, `⚠️ Uso: /setplan [id] [unlimited|credits]`); return; }
         await supabase.from('bot_users').update({ plan: pType }).eq('chat_id', tId);
         await sendMessage(chatId, `✅ Plan actualizado a ${pType}`);
     }
