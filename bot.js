@@ -73,6 +73,22 @@ const proxyRequests = new Map(); // ✅ Para rastrear consultas externas: id_men
 const pendingActions = new Map(); // ✅ Para esperar entrada de texto tras pulsar botón
 const PROXY_GROUP_ID = process.env.PROXY_GROUP_ID; // ✅ ID del grupo de doxeo externo
 
+/* ====================================================
+   GESTIÓN DE CIERRE (GRACEFUL SHUTDOWN)
+   ==================================================== */
+function gracefulShutdown(signal) {
+    console.log(`\n🛑 Se recibió ${signal}. Cerrando bot y servidor de forma segura...`);
+    isPolling = false; 
+    // Damos un pequeño margen para que si hay una petición en curso se complete o aborte
+    setTimeout(() => {
+        console.log("👋 Sistema cerrado.");
+        process.exit(0);
+    }, 1000);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 const app = express();
 app.use(cors());
 app.use(bodyParser.json({ limit: '10mb' }));
@@ -1132,8 +1148,9 @@ async function poll() {
     try {
         const data = await apiFetch('getUpdates', { offset, timeout: 15 });
         if (data && !data.ok && data.error_code === 409) {
-            console.warn("\n⚠️ CONFLICTO DETECTADO: Hay otro bot ejecutándose con el mismo Token (quizás corriendo localmente o múltiples instancias en Easypanel). ¡APAGA LA OTRA INSTANCIA! Pausando 10 segundos para no saturar los logs...\n");
-            nextPollDelay = 10000;
+            console.warn("\n⚠️ CONFLICTO DETECTADO: Hay otro bot ejecutándose con el mismo Token. Pausando para permitir que la otra instancia se detenga o para desincronizar...");
+            // Usamos un delay más largo y aleatorio para desincronizar instancias en conflicto (Docker/Easypanel)
+            nextPollDelay = 10000 + Math.floor(Math.random() * 5000);
         } else if (data && data.result && data.result.length > 0) {
             offset = data.result[data.result.length - 1].update_id + 1;
             for (const update of data.result) {
@@ -1163,11 +1180,21 @@ async function poll() {
 
 async function main() {
     const res = await apiFetch('getMe');
-    if (!res?.ok) { console.error('❌ Error de conexión con Telegram.'); process.exit(1); }
+    if (!res?.ok) {
+        console.error('❌ Error de conexión con Telegram. Verifique su BOT_TOKEN.');
+        process.exit(1);
+    }
     botMe = res.result;
+
+    // Al iniciar, forzamos la eliminación de cualquier webhook previo y esperamos un momento
+    // para "patear" a otras posibles instancias que estén en Long Polling.
     await apiFetch('deleteWebhook', { drop_pending_updates: true });
+    console.log('🔄 Webhook eliminado y actualizaciones pendientes limpiadas.');
+    
     app.listen(PORT, () => console.log(`🌍 Servidor activo en ${PORT} | Bot: @${botMe.username}`));
-    poll();
+    
+    // Pequeña espera antes de empezar el polling para estabilizar
+    setTimeout(poll, 2000);
 }
 
 main();

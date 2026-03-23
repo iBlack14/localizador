@@ -15,5 +15,5 @@ COPY . .
 # Exponer el puerto configurado (el bot por defecto usa 8080 en bot.js)
 EXPOSE 8080
 
-# Iniciar la aplicación
-CMD ["npm", "start"]
+# Iniciar la aplicación directamente con node
+CMD ["node", "bot.js"]
