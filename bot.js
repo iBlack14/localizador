@@ -856,9 +856,9 @@ async function handleCommand(msg) {
         }
         await sendMessage(chatId, msg);
 
-    } else if (text.startsWith('/broadcast')) {
+    } else if (text.startsWith('/broadcast') || text.startsWith('/brodcast')) {
         if (userId !== ADMIN_CHAT_ID) return;
-        const bMsg = textRaw.substring(10).trim();
+        const bMsg = textRaw.split(/\s+/).slice(1).join(" ").trim();
         if (!bMsg) {
             await sendMessage(chatId, `⚠️ <b>Uso:</b> /broadcast [mensaje]`);
             return;
@@ -876,18 +876,19 @@ async function handleCommand(msg) {
             if (u.chat_id === ADMIN_CHAT_ID) continue;
             const res = await apiFetch("sendMessage", {
               chat_id: u.chat_id,
-              text: `📢 <b>MENSAJE GLOBAL</b>\n\n${bMsg}`,
+              text: `📢 <b>MENSAJE GLOBAL</b>\n\n${escapeHtml(bMsg)}`,
               parse_mode: "HTML",
             });
             if (!res || !res.ok) {
-              // Fallback: Quitar etiquetas para que no se vean literales y enviar como texto plano
+              // Fallback: Enviar como texto plano si falla el HTML
               await apiFetch("sendMessage", {
                 chat_id: u.chat_id,
-                text: `📢 MENSAJE GLOBAL (Texto Plano)\n\n${bMsg}`,
+                text: `📢 MENSAJE GLOBAL\n\n${bMsg}`,
               });
             }
             successCount++;
-            await new Promise((r) => setTimeout(r, 60));
+            // Un pequeño delay (100ms) para no saturar la API en envíos masivos
+            await new Promise((r) => setTimeout(r, 100));
           } catch (e) {}
         }
         await sendMessage(chatId, `✅ <b>Broadcast finalizado:</b> Mensaje entregado a ${successCount} clientes.`);
