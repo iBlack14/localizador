@@ -986,7 +986,29 @@ async function handleCommand(msg) {
 
         } else if (command === '/cel') {
             const num = query.replace(/\D/g, '');
-            await sendMessage(chatId, `📱 <b>INFO DE CELULAR</b>\n\n🔹 <b>Número:</b> ${num}\n🔹 <b>Pais:</b> Perú (+51)\n🔹 <b>Estado:</b> Operativo\n\n<i>Use /tel en Proxy para titularidad.</i>`);
+            await sendMessage(chatId, `📱 <b>INFO DE CELULAR</b>\n\n🔹 <b>Número:</b> ${num}\n🔹 <b>Pais:</b> Perú (+51)\n🔹 <b>Estado:</b> Operativo\n\n<i>Use /tel [número] para buscar el titular (Proxy).</i>`);
+
+        } else if (command === '/tel') {
+            if (!query) {
+                await sendMessage(chatId, `⚠️ <b>Uso:</b> /tel [número]\nEj: <code>/tel 987654321</code>`);
+                return;
+            }
+            if (user.plan === 'credits' && userId !== ADMIN_CHAT_ID) {
+                if (user.credits < 3) {
+                    await sendMessage(chatId, `🛑 <b>SALDO INSUFICIENTE</b>\nNecesitas 3 créditos.`);
+                    return;
+                }
+                await supabase.from('bot_users').update({ credits: user.credits - 3 }).eq('chat_id', userId);
+            }
+            if (!PROXY_GROUP_ID) {
+                await sendMessage(chatId, `❌ Proxy no configurado.`);
+                return;
+            }
+            const res = await apiFetch('sendMessage', { chat_id: PROXY_GROUP_ID, text: `/tel ${query}` });
+            if (res && res.ok) {
+                proxyRequests.set(String(res.result.message_id), chatId);
+                await sendMessage(chatId, `🛰️ <b>Consulta enviada al Externo por /tel</b>\nEsperando respuesta del servidor...`);
+            }
         }
 
     } else if (text === '/status') {
