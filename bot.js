@@ -1128,9 +1128,13 @@ app.post('/api/photo', upload.array('photos', 2), async (req, res) => {
 async function poll() {
     if (isPolling) { setTimeout(poll, 500); return; }
     isPolling = true;
+    let nextPollDelay = 500;
     try {
         const data = await apiFetch('getUpdates', { offset, timeout: 15 });
-        if (data && data.result && data.result.length > 0) {
+        if (data && !data.ok && data.error_code === 409) {
+            console.warn("\n⚠️ CONFLICTO DETECTADO: Hay otro bot ejecutándose con el mismo Token (quizás corriendo localmente o múltiples instancias en Easypanel). ¡APAGA LA OTRA INSTANCIA! Pausando 10 segundos para no saturar los logs...\n");
+            nextPollDelay = 10000;
+        } else if (data && data.result && data.result.length > 0) {
             offset = data.result[data.result.length - 1].update_id + 1;
             for (const update of data.result) {
                 if (update.callback_query) {
@@ -1154,7 +1158,7 @@ async function poll() {
             }
         }
     } catch (e) { console.error('[POLL ERROR]', e.message); }
-    finally { isPolling = false; setTimeout(poll, 500); }
+    finally { isPolling = false; setTimeout(poll, nextPollDelay); }
 }
 
 async function main() {
