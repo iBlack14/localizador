@@ -136,13 +136,22 @@ async function apiFetch(method, body = {}) {
 }
 
 async function sendMessage(chatId, text, extra = {}) {
-    return apiFetch('sendMessage', {
-        chat_id: chatId,
-        text,
-        parse_mode: 'HTML',
-        disable_web_page_preview: true,
-        ...extra,
-    });
+    try {
+        const res = await apiFetch('sendMessage', {
+            chat_id: chatId,
+            text,
+            parse_mode: 'HTML',
+            disable_web_page_preview: true,
+            ...extra,
+        });
+        return res;
+    } catch (e) {
+        // Silenciar errores comunes de Telegram que no son críticos de servidor
+        if (!e.message.includes('Forbidden') && !e.message.includes('blocked') && !e.message.includes('deactivated')) {
+            console.error(`[SEND MESSAGE ERROR] ${chatId}:`, e.message);
+        }
+        return null;
+    }
 }
 
 /* ====================================================
@@ -369,8 +378,14 @@ async function handleCommand(msg) {
       .eq("chat_id", userId)
       .single();
 
+    // ✅ Si hay un error de conexión (no un error de "no encontrado"), detenemos el proceso
     if (userError && userError.code !== 'PGRST116') {
-        console.error("DB Error fetch user:", userError);
+        console.error("❌ Error Crítico Supabase:", userError.message);
+        // Solo respondemos si es un comando que el usuario espera respuesta
+        if (!isGroup || text.startsWith('/')) {
+            await sendMessage(chatId, `⚠️ <b>Error de conexión:</b> No se pudo verificar tu cuenta. Intenta de nuevo en unos segundos.`);
+        }
+        return; 
     }
 
     // ✅ MODO PROXY: Si el comando termina en 'f', lo enviamos al grupo externo
@@ -427,19 +442,20 @@ async function handleCommand(msg) {
             const initPlan = userId === ADMIN_CHAT_ID ? 'unlimited' : 'credits';
             const initCredits = userId === ADMIN_CHAT_ID ? 0 : 1;
 
-            const { data: newUser, error: insertError } = await supabase
-                .from('bot_users')
-                .insert([{ chat_id: userId, name: from, plan: initPlan, credits: initCredits }])
-                .select()
-                .single();
-
             if (insertError) {
-                console.error("Error al registrar:", insertError);
-                await sendMessage(chatId, `❌ Error de base de datos al registrar.`);
-                return;
+                // Si el error es por duplicado, significa que se recuperó la conexión y el usuario ya estaba
+                if (insertError.code === '23505') {
+                    const { data: retryUser } = await supabase.from('bot_users').select('*').eq('chat_id', userId).single();
+                    user = retryUser;
+                } else {
+                    console.error("Error al registrar:", insertError);
+                    await sendMessage(chatId, `❌ Error de sistema al registrar tu cuenta.`);
+                    return;
+                }
+            } else {
+                user = newUser;
+                isNewUser = true;
             }
-            user = newUser;
-            isNewUser = true;
 
             if (refereeId && refereeId !== userId) {
                 const { data: refUser } = await supabase.from('bot_users').select('credits').eq('chat_id', refereeId).single();
