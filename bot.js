@@ -265,7 +265,6 @@ async function runReniecQueryRows({ chatId, queryLabel, sql, params }) {
 async function sendMainMenu(chatId, userName) {
   const keyboard = {
     inline_keyboard: [
-      [{ text: "🆔 CONSULTA DNI", callback_data: "local_reniec" }],
       [{ text: "🔗 GENERAR TRACKER", callback_data: "local_links" }],
       [{ text: "🕵️‍♂️ HERRAMIENTAS OSINT", callback_data: "cat_osint" }],
       [{ text: "👤 MI CUENTA", callback_data: "cmd_status" }, { text: "🎁 REFERIDOS", callback_data: "cmd_invite" }],
@@ -294,10 +293,13 @@ async function handleCallback(cb) {
   const data = cb.data;
   const userId = String(cb.from.id);
 
+  /* 
   if (data === "local_reniec") {
     pendingActions.set(userId, "local_reniec");
     await sendMessage(chatId, `🆔 <b>CONSULTA RENIEC (Propia)</b>\n\n<code>Ingrese el DNI a consultar:</code>`);
-  } else if (data === "local_links") {
+  } else 
+  */
+  if (data === "local_links") {
     await sendMessage(chatId, `🔗 <b>GENERADOR DE TRACKERS</b>\n\nUsa los comandos directos:\n/tk, /yt, /d, /ig, /wa, /nx, /tg\n\nEjemplo: <code>/tk MiVideo</code>`);
   } else if (data === "cat_proxy") {
     pendingActions.set(userId, "proxy");
@@ -462,6 +464,7 @@ async function handleCommand(msg) {
         const category = pendingActions.get(userId);
         pendingActions.delete(userId);
 
+        /*
         if (category === "local_reniec") {
             if (user.plan === 'credits' && userId !== ADMIN_CHAT_ID) {
                 if (user.credits < 2) {
@@ -483,6 +486,7 @@ async function handleCommand(msg) {
             }
             return;
         }
+        */
 
         if (category === "osint_ip") {
             try {
@@ -561,6 +565,7 @@ async function handleCommand(msg) {
         return;
     }
 
+    /* 
     if (command === '/campos') {
         const headers = ["DNI", "AP_PAT", "AP_MAT", "NOMBRES", "FECHA_NAC", "FCH_INSCRIPCION", "FCH_EMISION", "FCH_CADUCIDAD", "UBIGEO_NAC", "UBIGEO_DIR", "DIRECCION", "SEXO", "EST_CIVIL", "DIG_RUC", "MADRE", "PADRE"];
         await sendMessage(chatId,
@@ -828,6 +833,8 @@ async function handleCommand(msg) {
         }
 
     } else if (command === '/myplan') {
+    */
+    if (command === '/myplan') {
         if (!user) {
             await sendMessage(chatId, `❌ No estás registrado. Usa /start primero.`);
             return;
@@ -897,12 +904,7 @@ async function handleCommand(msg) {
         let helpMsg =
           `🛠️ <b>TABLA DE COMANDOS</b>\n\n` +
           `📂 <b>Búsquedas RENIEC:</b>
-• <code>/dni [número]</code>
-• <code>/nom [nombre]</code>
-• <code>/ap [paterno] [materno]</code>
-• <code>/ubigeo [texto]</code>
-• <code>/direccion [calle]</code>
-• <code>/export [tipo] [valor]</code>
+<i>Mantenimiento temporal - No Disponible</i>
 
 🕵️‍♂️ <b>Módulos OSINT (3 CR):</b>
 • <code>/ip [ip]</code> - Geolocalización y VPN
