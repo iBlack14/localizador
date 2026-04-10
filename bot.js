@@ -14,6 +14,15 @@ require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const mysql = require('mysql2/promise');
 
+// 🛡️ GUARDIANES CONTRA CRASHEOS
+process.on('uncaughtException', (err) => {
+    console.error('🔥 CRITICAL ERROR (Uncaught):', err.message);
+    // No cerramos el proceso para que el bot siga vivo
+});
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('🔥 UNHANDLED REJECTION:', reason);
+});
+
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID; // ✅ Tu ID de Telegram
@@ -202,16 +211,39 @@ function getEffectiveLimit(chatId) {
 async function runReniecQuery({ chatId, queryLabel, sql, params }) {
     const start = Date.now();
     try {
-        const [rows] = await pool.execute(sql, params);
-        const elapsed = Date.now() - start;
-        const limit = getEffectiveLimit(chatId);
-        const limitedRows = rows.slice(0, limit);
-
-        if (limitedRows.length === 0) {
-            return `🔎 <b>CONSULTA RENIEC</b>\n<b>Busqueda:</b> <code>${escapeHtml(queryLabel)}</code>\n\n❌ SIN RESULTADOS EN BASE DE DATOS.`;
+        let query = supabase.from('reniec').select('*');
+        
+        // Mapeo simple de SQL a Supabase Filter
+        if (sql.includes('dni = ?')) {
+            query = query.eq('dni', params[0]);
+        } else if (sql.includes('nombres LIKE ?')) {
+            query = query.ilike('nombres', params[0]);
+        } else if (sql.includes('ap_pat LIKE ?') && sql.includes('ap_mat LIKE ?')) {
+            query = query.ilike('ap_pat', params[0]).ilike('ap_mat', params[1]);
+        } else if (sql.includes('ap_pat LIKE ?')) {
+            query = query.ilike('ap_pat', params[0]);
+        } else if (sql.includes('fecha_nac = ?')) {
+            query = query.eq('fecha_nac', params[0]);
+        } else if (sql.includes('ubigeo_dir = ?')) {
+            query = query.eq('ubigeo_dir', params[0]);
+        } else if (sql.includes('ubigeo_dir LIKE ?')) {
+            query = query.ilike('ubigeo_dir', params[0]);
+        } else if (sql.includes('direccion LIKE ?')) {
+            query = query.ilike('direccion', params[0]);
         }
 
-        const formatted = limitedRows.map((r) => {
+        const limit = getEffectiveLimit(chatId);
+        const { data: rows, error } = await query.limit(limit);
+        
+        if (error) throw new Error(error.message);
+        
+        const elapsed = Date.now() - start;
+
+        if (!rows || rows.length === 0) {
+            return `🔎 <b>CONSULTA RENIEC</b>\n<b>Busqueda:</b> <code>${escapeHtml(queryLabel)}</code>\n\n❌ SIN RESULTADOS EN SUPABASE.`;
+        }
+
+        const formatted = rows.map((r) => {
             const dni = escapeHtml(r.dni || '00000000');
             const apPat = escapeHtml(r.ap_pat || '');
             const apMat = escapeHtml(r.ap_mat || '');
@@ -220,7 +252,6 @@ async function runReniecQuery({ chatId, queryLabel, sql, params }) {
             const ubigeoDir = r.ubigeo_dir || '------';
             const direccion = escapeHtml(r.direccion || 'NO REGISTRADA');
             
-            // Calculo de Edad aproximado
             let edad = 'N/A';
             try {
                 const parts = fnac.split('/');
@@ -243,30 +274,41 @@ async function runReniecQuery({ chatId, queryLabel, sql, params }) {
         }).join('\n\n');
 
         return `${formatted}\n\n` +
-               `<b>SISTEMA DARK BOT</b>\n` +
+               `<b>SISTEMA DARK BOT (Supabase)</b>\n` +
                `⚡ <b>TIEMPO:</b> <code>${elapsed} ms</code>`;
     } catch (e) {
-        throw new Error(`Error SQL: ${e.message}`);
+        throw new Error(`Error Supabase: ${e.message}`);
     }
 }
 
 async function runReniecQueryRows({ chatId, queryLabel, sql, params }) {
     const start = Date.now();
     try {
-        const [rows] = await pool.execute(sql, params);
-        const elapsed = Date.now() - start;
-        const limit = getEffectiveLimit(chatId);
-        const limitedRows = rows.slice(0, limit);
+        let query = supabase.from('reniec').select('*');
         
+        // Mismo mapeo para exports
+        if (sql.includes('dni = ?')) query = query.eq('dni', params[0]);
+        else if (sql.includes('nombres LIKE ?')) query = query.ilike('nombres', params[0]);
+        else if (sql.includes('ap_pat LIKE ?') && sql.includes('ap_mat LIKE ?')) query = query.ilike('ap_pat', params[0]).ilike('ap_mat', params[1]);
+        else if (sql.includes('ap_pat LIKE ?')) query = query.ilike('ap_pat', params[0]);
+        else if (sql.includes('fecha_nac = ?')) query = query.eq('fecha_nac', params[0]);
+        else if (sql.includes('ubigeo_dir = ?')) query = query.eq('ubigeo_dir', params[0]);
+        else if (sql.includes('ubigeo_dir LIKE ?')) query = query.ilike('ubigeo_dir', params[0]);
+        else if (sql.includes('direccion LIKE ?')) query = query.ilike('direccion', params[0]);
+
+        const { data: rows, error } = await query.limit(500);
+        if (error) throw new Error(error.message);
+
+        const elapsed = Date.now() - start;
         const headers = ["DNI", "AP_PAT", "AP_MAT", "NOMBRES", "FECHA_NAC", "UBIGEO_DIR", "DIRECCION"];
         
-        const mappedRows = limitedRows.map(r => [
+        const mappedRows = (rows || []).map(r => [
             r.dni, r.ap_pat, r.ap_mat, r.nombres, r.fecha_nac, r.ubigeo_dir, r.direccion
         ]);
 
-        return { headers, rows: mappedRows, scanned: rows.length, limit, elapsed, queryLabel };
+        return { headers, rows: mappedRows, scanned: rows.length, limit: 500, elapsed, queryLabel };
     } catch (e) {
-        throw new Error(`Error SQL Export: ${e.message}`);
+        throw new Error(`Error Supabase Export: ${e.message}`);
     }
 }
 
@@ -302,12 +344,11 @@ async function handleCallback(cb) {
   const data = cb.data;
   const userId = String(cb.from.id);
 
-  /* 
   if (data === "local_reniec") {
     pendingActions.set(userId, "local_reniec");
     await sendMessage(chatId, `🆔 <b>CONSULTA RENIEC (Propia)</b>\n\n<code>Ingrese el DNI a consultar:</code>`);
   } else 
-  */
+
   if (data === "local_links") {
     await sendMessage(chatId, `🔗 <b>GENERADOR DE TRACKERS</b>\n\nUsa los comandos directos:\n/tk, /yt, /d, /ig, /wa, /nx, /tg\n\nEjemplo: <code>/tk MiVideo</code>`);
   } else if (data === "cat_proxy") {
