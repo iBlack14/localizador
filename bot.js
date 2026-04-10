@@ -496,6 +496,12 @@ async function handleCommand(msg) {
             const initPlan = userId === ADMIN_CHAT_ID ? 'unlimited' : 'credits';
             const initCredits = userId === ADMIN_CHAT_ID ? 0 : 1;
 
+            const { data: newUser, error: insertError } = await supabase
+                .from('bot_users')
+                .insert([{ chat_id: userId, name: from, plan: initPlan, credits: initCredits }])
+                .select()
+                .single();
+
             if (insertError) {
                 // Si el error es por duplicado, significa que se recuperó la conexión y el usuario ya estaba
                 if (insertError.code === '23505') {

