@@ -121,26 +121,35 @@ const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } }); // Para fotos
 /* ====================================================
    FETCH A TELEGRAM
    ==================================================== */
-async function apiFetch(method, body = {}) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 20000);
-    try {
-        const res = await fetch(`${BASE_URL}/${method}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-            signal: controller.signal,
-        });
-        clearTimeout(timer);
-        const json = await res.json();
-        if (!json.ok) {
-            console.error(`[TG API ERROR] ${method}:`, json.description || json.error_code);
+async function apiFetch(method, body = {}, retries = 3) {
+    for (let i = 0; i < retries; i++) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 20000);
+        try {
+            const res = await fetch(`${BASE_URL}/${method}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+                signal: controller.signal,
+            });
+            clearTimeout(timer);
+            const json = await res.json();
+            if (!json.ok) {
+                console.error(`[TG API ERROR] ${method}:`, json.description || json.error_code);
+            }
+            return json;
+        } catch (e) {
+            clearTimeout(timer);
+            const isNetworkError = e.message.includes('fetch failed') || e.message.includes('EAI_AGAIN');
+            if (isNetworkError && i < retries - 1) {
+                const delay = 1000 * (i + 1);
+                console.warn(`[RETRYING] ${method} en ${delay}ms por fallo de red...`);
+                await new Promise(r => setTimeout(r, delay));
+                continue;
+            }
+            console.error(`[FETCH ERROR] ${method}:`, e.message);
+            return null;
         }
-        return json;
-    } catch (e) {
-        clearTimeout(timer);
-        console.error(`[FETCH ERROR] ${method}:`, e.message);
-        return null;
     }
 }
 
@@ -377,8 +386,12 @@ async function handleCallback(cb) {
     pendingActions.set(userId, "osint_mail");
     await sendMessage(chatId, `📧 <b>BREACH CHECK (Filtraciones)</b>\n\n<code>Ingrese el correo electrónico:</code>\nEjemplo: <code>usuario@gmail.com</code>`);
   } else if (data === "main_menu") {
-    const userRow = await supabase.from('bot_users').select('name').eq('chat_id', userId).single();
-    await sendMainMenu(chatId, userRow.data?.name || "Usuario");
+    const { data: userRow, error: rowError } = await supabase.from('bot_users').select('name').eq('chat_id', userId).single();
+    if (rowError && rowError.code !== 'PGRST116') {
+        await sendMessage(chatId, "⚠️ Error de conexión con la base de datos.");
+    } else {
+        await sendMainMenu(chatId, userRow?.name || "Usuario");
+    }
 
   } else if (data === "cmd_status") {
     cb.message.text = "/status";
@@ -390,7 +403,7 @@ async function handleCallback(cb) {
     await handleCommand(cb.message);
   }
   
-  await apiFetch('answerCallbackQuery', { callback_query_id: cb.id });
+  await apiFetch('answerCallbackQuery', { callback_query_id: cb.id }).catch(() => {});
 }
 
 /* ====================================================
