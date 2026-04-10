@@ -1029,15 +1029,15 @@ async function handleCommand(msg) {
             `👇 <b>Tu enlace para compartir:</b>\n<code>${refLink}</code>`
         );
 
-    } else if (text.startsWith('/tk') || text.startsWith('/yt') || text.startsWith('/d') || text.startsWith('/ig') || text.startsWith('/wa') || text.startsWith('/nx') || text.startsWith('/tg')) {
+    } else if (['/tk', '/yt', '/d', '/ig', '/wa', '/nx', '/tg'].includes(command)) {
         let type = 'tiktok';
         let typeName = 'TikTok';
-        if (text.startsWith('/yt')) { type = 'youtube'; typeName = 'YouTube'; }
-        else if (text.startsWith('/d')) { type = 'drive'; typeName = 'Google Drive'; }
-        else if (text.startsWith('/ig')) { type = 'ig'; typeName = 'Instagram Reel'; }
-        else if (text.startsWith('/wa')) { type = 'wa'; typeName = 'WhatsApp Group'; }
-        else if (text.startsWith('/nx')) { type = 'nx'; typeName = 'Netflix Player'; }
-        else if (text.startsWith('/tg')) { type = 'tg'; typeName = 'Telegram Voice Note'; }
+        if (command === '/yt') { type = 'youtube'; typeName = 'YouTube'; }
+        else if (command === '/d') { type = 'drive'; typeName = 'Google Drive'; }
+        else if (command === '/ig') { type = 'ig'; typeName = 'Instagram Reel'; }
+        else if (command === '/wa') { type = 'wa'; typeName = 'WhatsApp Group'; }
+        else if (command === '/nx') { type = 'nx'; typeName = 'Netflix Player'; }
+        else if (command === '/tg') { type = 'tg'; typeName = 'Telegram Voice Note'; }
 
         if (!user) {
             await sendMessage(chatId, `❌ No estás registrado en el sistema. Escriba /start`);
