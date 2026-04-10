@@ -715,7 +715,7 @@ async function handleCommand(msg) {
             }
             await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', userId);
         }
-        await sendMessage(chatId, `🔎 <b>Buscando DNI ${dni}...</b>`);
+        const searchingMsg = await sendMessage(chatId, `🔎 <b>Buscando DNI ${dni}...</b>`);
         try {
             const out = await runReniecQuery({
                 chatId,
@@ -725,7 +725,11 @@ async function handleCommand(msg) {
             });
             await sendMessage(chatId, out);
         } catch (e) {
-            await sendMessage(chatId, `❌ Error en búsqueda de DNI: ${escapeHtml(e.message)}`);
+            await sendMessage(chatId, `❌ Error en búsqueda de DNI: ${e.message}`);
+        } finally {
+            if (searchingMsg?.result?.message_id) {
+                apiFetch('deleteMessage', { chat_id: chatId, message_id: searchingMsg.result.message_id });
+            }
         }
 
     } else if (command === '/nom') {
@@ -741,6 +745,7 @@ async function handleCommand(msg) {
             }
             await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', userId);
         }
+        const searchingMsg = await sendMessage(chatId, `🔎 <b>Buscando Nombre "${argsRaw.join(' ')}"...</b>`);
         try {
             const out = await runReniecQuery({
                 chatId,
@@ -750,7 +755,44 @@ async function handleCommand(msg) {
             });
             await sendMessage(chatId, out);
         } catch (e) {
-            await sendMessage(chatId, `❌ Error SQL NOMBRES: ${escapeHtml(e.message)}`);
+            await sendMessage(chatId, `❌ Error en búsqueda por Nombres: ${e.message}`);
+        } finally {
+            if (searchingMsg?.result?.message_id) {
+                apiFetch('deleteMessage', { chat_id: chatId, message_id: searchingMsg.result.message_id });
+            }
+        }
+
+    } else if (command === '/nm') {
+        const input = argsRaw.join(' ');
+        const parts = input.split('|').map(p => p.trim());
+        if (parts.length < 2) {
+            await sendMessage(chatId, `⚠️ <b>Uso:</b> /nm NOMBRE|AP_PAT|AP_MAT\nEj: <code>/nm JUAN|PEREZ|SOTO</code>`);
+            return;
+        }
+        const [nom, pat, mat] = parts;
+        if (user.plan === 'credits' && userId !== ADMIN_CHAT_ID) {
+            if (user.credits < 3) {
+                await sendMessage(chatId, `🛑 <b>SALDO INSUFICIENTE</b>\nNecesitas 3 créditos.`);
+                return;
+            }
+            await supabase.from('bot_users').update({ credits: user.credits - 3 }).eq('chat_id', userId);
+        }
+
+        const searchingMsg = await sendMessage(chatId, `🔎 <b>Buscando Nombre Completo...</b>`);
+        try {
+            const out = await runReniecQuery({
+                chatId,
+                queryLabel: `FULLNAME "${input}"`,
+                sql: `SELECT * FROM reniec WHERE nombres LIKE ? AND ap_pat LIKE ? ${mat ? 'AND ap_mat LIKE ?' : ''} LIMIT 50`,
+                params: mat ? [`%${normalizeText(nom)}%`, `%${normalizeText(pat)}%`, `%${normalizeText(mat)}%`] : [`%${normalizeText(nom)}%`, `%${normalizeText(pat)}%`]
+            });
+            await sendMessage(chatId, out);
+        } catch (e) {
+            await sendMessage(chatId, `❌ Error en /nm: ${e.message}`);
+        } finally {
+            if (searchingMsg?.result?.message_id) {
+                apiFetch('deleteMessage', { chat_id: chatId, message_id: searchingMsg.result.message_id });
+            }
         }
 
     } else if (command === '/ap') {
@@ -767,6 +809,7 @@ async function handleCommand(msg) {
             }
             await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', userId);
         }
+        const searchingMsg = await sendMessage(chatId, `🔎 <b>Buscando Apellidos "${argsRaw.join(' ')}"...</b>`);
         try {
             let sql = `SELECT * FROM reniec WHERE ap_pat LIKE ? LIMIT 50`;
             let params = [`%${apPatTerm}%`];
@@ -782,7 +825,11 @@ async function handleCommand(msg) {
             });
             await sendMessage(chatId, out);
         } catch (e) {
-            await sendMessage(chatId, `❌ Error SQL APELLIDOS: ${escapeHtml(e.message)}`);
+            await sendMessage(chatId, `❌ Error en búsqueda por Apellidos: ${e.message}`);
+        } finally {
+            if (searchingMsg?.result?.message_id) {
+                apiFetch('deleteMessage', { chat_id: chatId, message_id: searchingMsg.result.message_id });
+            }
         }
 
     } else if (command === '/fnac') {
