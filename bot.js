@@ -686,7 +686,6 @@ async function handleCommand(msg) {
         return;
     }
 
-    /* 
     if (command === '/campos') {
         const headers = ["DNI", "AP_PAT", "AP_MAT", "NOMBRES", "FECHA_NAC", "FCH_INSCRIPCION", "FCH_EMISION", "FCH_CADUCIDAD", "UBIGEO_NAC", "UBIGEO_DIR", "DIRECCION", "SEXO", "EST_CIVIL", "DIG_RUC", "MADRE", "PADRE"];
         await sendMessage(chatId,
@@ -715,7 +714,6 @@ async function handleCommand(msg) {
                 return;
             }
             await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', userId);
-        }
         }
         await sendMessage(chatId, `🔎 <b>Buscando DNI ${dni}...</b>`);
         try {
@@ -955,9 +953,8 @@ async function handleCommand(msg) {
             await sendMessage(chatId, `❌ Error exportando resultados: ${escapeHtml(e.message)}`);
         }
 
+
     } else if (command === '/myplan') {
-    */
-    if (command === '/myplan') {
         if (!user) {
             await sendMessage(chatId, `❌ No estás registrado. Usa /start primero.`);
             return;
