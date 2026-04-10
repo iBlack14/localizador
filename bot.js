@@ -346,7 +346,6 @@ async function sendMainMenu(chatId, userName) {
   const welcomeText = `Hola, <b>${userName}</b>\n\n<b>[ PANEL DE COMANDOS ]</b>\n\nBienvenido a nuestro menú principal de comandos.\n\nPor favor, selecciona una opción según la categoría que deseas consultar o explorar.`;
 
   try {
-  try {
     const formData = new FormData();
     formData.append('chat_id', chatId);
     formData.append('caption', welcomeText);
@@ -375,12 +374,11 @@ async function handleCallback(cb) {
   // ⚡ Respuesta inmediata para quitar el "reloj" de carga de Telegram
   apiFetch('answerCallbackQuery', { callback_query_id: cb.id }).catch(() => {});
 
+
   if (data === "local_reniec") {
     pendingActions.set(userId, "local_reniec");
     await sendMessage(chatId, `🆔 <b>CONSULTA RENIEC (Propia)</b>\n\n<code>Ingrese el DNI a consultar:</code>`);
-  } else 
-
-  if (data === "local_links") {
+  } else if (data === "local_links") {
     await sendMessage(chatId, `🔗 <b>GENERADOR DE TRACKERS</b>\n\nUsa los comandos directos:\n/tk, /yt, /d, /ig, /wa, /nx, /tg\n\nEjemplo: <code>/tk MiVideo</code>`);
   } else if (data === "cat_proxy") {
     pendingActions.set(userId, "proxy");
@@ -423,7 +421,6 @@ async function handleCallback(cb) {
     cb.message.text = "/invite";
     cb.message.from = cb.from;
     await handleCommand(cb.message);
-  }
   }
 }
 
@@ -1001,7 +998,7 @@ async function handleCommand(msg) {
         let helpMsg =
           `🛠️ <b>TABLA DE COMANDOS</b>\n\n` +
           `📂 <b>Búsquedas RENIEC:</b>
-<i>Mantenimiento temporal - No Disponible</i>
+• <code>/dni, /nom, /ap, /fnac, /ubigeo, /direccion</code>
 
 🕵️‍♂️ <b>Módulos OSINT (3 CR):</b>
 • <code>/ip [ip]</code> - Geolocalización y VPN
