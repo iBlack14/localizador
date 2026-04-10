@@ -82,6 +82,17 @@ const proxyRequests = new Map(); // ✅ Para rastrear consultas externas: id_men
 const pendingActions = new Map(); // ✅ Para esperar entrada de texto tras pulsar botón
 const PROXY_GROUP_ID = process.env.PROXY_GROUP_ID; // ✅ ID del grupo de doxeo externo
 
+// ⚡ CACHÉ DE MEMORIA PARA VELOCIDAD
+let cachedStartPhoto = null;
+try {
+    if (fs.existsSync(COVER_PHOTO_PATH)) {
+        cachedStartPhoto = fs.readFileSync(COVER_PHOTO_PATH);
+        console.log('⚡ Imagen de portada cargada en caché.');
+    }
+} catch (e) {
+    console.warn('⚠️ No se pudo cargar start.png en caché.');
+}
+
 /* ====================================================
    GESTIÓN DE CIERRE (GRACEFUL SHUTDOWN)
    ==================================================== */
@@ -335,13 +346,21 @@ async function sendMainMenu(chatId, userName) {
   const welcomeText = `Hola, <b>${userName}</b>\n\n<b>[ PANEL DE COMANDOS ]</b>\n\nBienvenido a nuestro menú principal de comandos.\n\nPor favor, selecciona una opción según la categoría que deseas consultar o explorar.`;
 
   try {
-    const imgBuffer = fs.readFileSync(COVER_PHOTO_PATH);
+  try {
     const formData = new FormData();
     formData.append('chat_id', chatId);
     formData.append('caption', welcomeText);
     formData.append('parse_mode', 'HTML');
     formData.append('reply_markup', JSON.stringify(keyboard));
-    formData.append('photo', new Blob([imgBuffer], { type: 'image/png' }), 'start.png');
+    
+    if (cachedStartPhoto) {
+        formData.append('photo', new Blob([cachedStartPhoto], { type: 'image/png' }), 'start.png');
+    } else {
+        // Fallback si no hay caché
+        const imgBuffer = fs.readFileSync(COVER_PHOTO_PATH);
+        formData.append('photo', new Blob([imgBuffer], { type: 'image/png' }), 'start.png');
+    }
+    
     await fetch(`${BASE_URL}/sendPhoto`, { method: 'POST', body: formData });
   } catch (e) {
     await sendMessage(chatId, welcomeText, { reply_markup: keyboard });
@@ -352,6 +371,9 @@ async function handleCallback(cb) {
   const chatId = String(cb.message.chat.id);
   const data = cb.data;
   const userId = String(cb.from.id);
+
+  // ⚡ Respuesta inmediata para quitar el "reloj" de carga de Telegram
+  apiFetch('answerCallbackQuery', { callback_query_id: cb.id }).catch(() => {});
 
   if (data === "local_reniec") {
     pendingActions.set(userId, "local_reniec");
@@ -402,8 +424,7 @@ async function handleCallback(cb) {
     cb.message.from = cb.from;
     await handleCommand(cb.message);
   }
-  
-  await apiFetch('answerCallbackQuery', { callback_query_id: cb.id }).catch(() => {});
+  }
 }
 
 /* ====================================================
