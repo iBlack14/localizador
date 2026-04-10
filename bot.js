@@ -82,6 +82,26 @@ const proxyRequests = new Map(); // ✅ Para rastrear consultas externas: id_men
 const pendingActions = new Map(); // ✅ Para esperar entrada de texto tras pulsar botón
 const PROXY_GROUP_ID = process.env.PROXY_GROUP_ID; // ✅ ID del grupo de doxeo externo
 
+// 🛡️ SEGURIDAD Y LIMPIEZA
+const userLastMsgTime = new Map();
+const RATE_LIMIT_MS = 1500; // 1.5 segundos entre comandos
+
+async function cleanupObsoleteData() {
+    console.log('🧹 [MANTENIMIENTO] Iniciando limpieza de registros antiguos...');
+    try {
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        // Borrar enlaces de trackers con más de 7 días
+        const { error } = await supabase.from('bot_links').delete().lt('created_at', sevenDaysAgo);
+        if (error) console.error('❌ Error en limpieza de DB:', error.message);
+        else console.log('✅ Base de datos optimizada: Registros antiguos eliminados.');
+    } catch (e) {
+        console.error('❌ Error en tarea de mantenimiento:', e.message);
+    }
+}
+
+// Ejecutar limpieza cada 24 horas
+setInterval(cleanupObsoleteData, 24 * 60 * 60 * 1000);
+
 // ⚡ CACHÉ DE MEMORIA PARA VELOCIDAD
 let cachedStartPhoto = null;
 try {
@@ -431,6 +451,13 @@ async function handleCommand(msg) {
     const chatId = String(msg.chat.id);
     const userId = String(msg.from.id);
     const textRaw = (msg.text || "").trim();
+    
+    // 🛡️ ANTI-SPAM: Ignorar si envía mensajes demasiado rápido
+    const now = Date.now();
+    const lastTime = userLastMsgTime.get(userId) || 0;
+    if (now - lastTime < RATE_LIMIT_MS && userId !== ADMIN_CHAT_ID) return;
+    userLastMsgTime.set(userId, now);
+
     const partsRaw = textRaw.split(" ").filter(Boolean);
     
     // Detectar comando y limpiar el arroba si viene de un grupo (ej: /dni@bot -> /dni)
@@ -689,6 +716,8 @@ async function handleCommand(msg) {
             }
             await supabase.from('bot_users').update({ credits: user.credits - 2 }).eq('chat_id', userId);
         }
+        }
+        await sendMessage(chatId, `🔎 <b>Buscando DNI ${dni}...</b>`);
         try {
             const out = await runReniecQuery({
                 chatId,
@@ -698,7 +727,7 @@ async function handleCommand(msg) {
             });
             await sendMessage(chatId, out);
         } catch (e) {
-            await sendMessage(chatId, `❌ Error SQL DNI: ${escapeHtml(e.message)}`);
+            await sendMessage(chatId, `❌ Error en búsqueda de DNI: ${escapeHtml(e.message)}`);
         }
 
     } else if (command === '/nom') {
@@ -1059,6 +1088,11 @@ async function handleCommand(msg) {
         const shortUrl = await shortenUrl(longUrl);
 
         linkHistory.push({ id: target, createdAt: new Date().toLocaleString('es-ES'), owner: from, shortUrl });
+        
+        // 🧠 GESTIÓN DE MEMORIA: Solo guardamos los últimos 500 en RAM
+        if (linkHistory.length > 500) {
+            linkHistory.shift();
+        }
 
         await sendMessage(chatId,
             `📁 <b>Enlace de ${typeName} Generado</b>\n\n` +
@@ -1095,11 +1129,69 @@ async function handleCommand(msg) {
             await sendMessage(chatId, `👤 <b>ESCÁNER DE NICKNAME</b>\n\nInvestigando rastro de <code>${query}</code>...\n\n🔗 <b>IG:</b> instagram.com/${query}\n🔗 <b>TT:</b> tiktok.com/@${query}\n🔗 <b>X:</b> twitter.com/${query}\n🔗 <b>FB:</b> facebook.com/${query}`);
 
         } else if (command === '/mail') {
-            await sendMessage(chatId, `📧 <b>ANÁLISIS DE BREACH</b>\n\nVerificando <code>${query}</code>...\n\n🔎 <b>Detalles:</b> <a href="https://haveibeenpwned.com/">Ver Filtraciones</a>`);
+            await sendMessage(chatId, `📧 <b>ANÁLISIS DE BREACH</b>\n\nInvestigando <code>${query}</code> en bases de datos de filtraciones...`);
+            try {
+                // Usamos una API pública de Breach Directory o similar para mostrar resultados reales
+                const res = await fetch(`https://api.proxynova.com/comb?query=${query}`);
+                const data = await res.json();
+                
+                if (data.results && data.results.length > 0) {
+                    const breaches = data.results.slice(0, 15).map(b => `• <code>${escapeHtml(b)}</code>`).join('\n');
+                    await sendMessage(chatId, 
+                        `🔴 <b>¡FILTRACIONES ENCONTRADAS!</b>\n\n` +
+                        `El correo <code>${query}</code> aparece en las siguientes bases de datos:\n\n` +
+                        `${breaches}\n\n` +
+                        `🛡️ <i>Se recomienda cambiar contraseñas de inmediato.</i>`
+                    );
+                } else {
+                    await sendMessage(chatId, `🟢 <b>CORREO LIMPIO</b>\n\nNo se han encontrado filtraciones públicas para <code>${query}</code>.`);
+                }
+            } catch (e) {
+                await sendMessage(chatId, `❌ Error al consultar bases de datos de filtraciones.`);
+            }
 
         } else if (command === '/cel') {
             const num = query.replace(/\D/g, '');
-            await sendMessage(chatId, `📱 <b>INFO DE CELULAR</b>\n\n🔹 <b>Número:</b> ${num}\n🔹 <b>Pais:</b> Perú (+51)\n🔹 <b>Estado:</b> Operativo\n\n<i>Use /tel [número] para buscar el titular (Proxy).</i>`);
+            if (num.length < 7) {
+                await sendMessage(chatId, `⚠️ Número demasiado corto.`);
+                return;
+            }
+            await sendMessage(chatId, `📱 <b>INFO DE CELULAR</b>\n\nInvestigando red para <code>${num}</code>...`);
+            try {
+                // Usamos Veriphone o similar para obtener la operadora real
+                const res = await fetch(`https://api.veriphone.io/v2/verify?phone=${num}`);
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    const operadora = data.carrier || 'Desconocida';
+                    const pais = data.country || 'Perú';
+                    const tipo = data.phone_type || 'Mobile';
+                    
+                    await sendMessage(chatId, 
+                        `📱 <b>RESULTADOS PARA: ${num}</b>\n\n` +
+                        `🔹 <b>Operadora:</b> <code>${operadora}</code>\n` +
+                        `🔹 <b>País:</b> ${pais}\n` +
+                        `🔹 <b>Tipo:</b> ${tipo}\n` +
+                        `🔹 <b>Estado:</b> ${data.valid ? '✅ Activo' : '❌ Inactivo'}\n\n` +
+                        `🛰️ <i>Solicitando nombre del titular al servidor externo...</i>`
+                    );
+
+                    // ⚡ SOLICITUD AUTOMÁTICA AL PROXY PARA EL NOMBRE
+                    if (PROXY_GROUP_ID) {
+                        const proxyRes = await apiFetch('sendMessage', { 
+                            chat_id: PROXY_GROUP_ID, 
+                            text: `/tel ${num}` 
+                        });
+                        if (proxyRes && proxyRes.ok) {
+                            proxyRequests.set(String(proxyRes.result.message_id), chatId);
+                        }
+                    }
+                } else {
+                    await sendMessage(chatId, `❌ No se pudo determinar la operadora para este número.`);
+                }
+            } catch (e) {
+                await sendMessage(chatId, `❌ Error en el servidor de telefonía.`);
+            }
 
         } else if (command === '/tel') {
             if (!query) {
