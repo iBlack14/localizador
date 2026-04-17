@@ -479,10 +479,16 @@ async function handleCommand(msg) {
 
     // ✅ Si hay un error de conexión (no un error de "no encontrado"), detenemos el proceso
     if (userError && userError.code !== 'PGRST116') {
-        console.error("❌ Error Crítico Supabase:", userError.message);
+        const isHtml = userError.message && userError.message.includes('<!DOCTYPE html>');
+        const cleanMessage = isHtml 
+            ? "Servicio Supabase NO alcanzable (Error de Proxy EasyPanel). Verifica que el contenedor esté activo." 
+            : userError.message;
+
+        console.error("❌ Error Crítico Supabase:", cleanMessage);
+        
         // Solo respondemos si es un comando que el usuario espera respuesta
         if (!isGroup || text.startsWith('/')) {
-            await sendMessage(chatId, `⚠️ <b>Error de conexión:</b> No se pudo verificar tu cuenta. Intenta de nuevo en unos segundos.`);
+            await sendMessage(chatId, `⚠️ <b>Error de sistema:</b> La base de datos no responde.\n\n<i>Esto suele ocurrir si el servidor de base de datos está en mantenimiento o apagado.</i>`);
         }
         return; 
     }
@@ -1425,6 +1431,20 @@ async function main() {
     console.log('🔄 Webhook eliminado y actualizaciones pendientes limpiadas.');
     
     app.listen(PORT, () => console.log(`🌍 Servidor activo en ${PORT} | Bot: @${botMe.username}`));
+    
+    // 🔍 Health Check de Supabase al iniciar
+    try {
+        const { error } = await supabase.from('bot_users').select('count', { count: 'exact', head: true });
+        if (error) {
+            const isHtml = error.message && error.message.includes('<!DOCTYPE html>');
+            if (isHtml) console.error("⚠️ ALERTA: Supabase devolvió HTML. El proxy de EasyPanel no está redirigiendo correctamente al contenedor.");
+            else console.error("⚠️ ALERTA: Supabase está respondiendo con errores:", error.message);
+        } else {
+            console.log("✅ Conexión con Supabase establecida correctamente.");
+        }
+    } catch (e) {
+        console.error("⚠️ Error de red al intentar conectar con Supabase:", e.message);
+    }
     
     // Pequeña espera antes de empezar el polling para estabilizar
     setTimeout(poll, 2000);
