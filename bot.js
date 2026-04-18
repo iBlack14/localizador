@@ -1387,7 +1387,12 @@ async function poll() {
     isPolling = true;
     let nextPollDelay = 500;
     try {
-        const data = await apiFetch('getUpdates', { offset, timeout: 15 });
+        // Forzamos a Telegram a enviarnos mensajes y clics de botones explícitamente
+        const data = await apiFetch('getUpdates', { 
+            offset, 
+            timeout: 15,
+            allowed_updates: ["message", "callback_query", "channel_post", "edited_message"]
+        });
         if (data && data.result && data.result.length > 0) {
             console.log(`📦 [POLL] Recibidas ${data.result.length} actualizaciones.`);
             offset = data.result[data.result.length - 1].update_id + 1;
@@ -1398,7 +1403,10 @@ async function poll() {
                 }
 
                 const msg = update.message;
-                if (!msg) continue;
+                if (!msg) {
+                    console.log(`❓ [UPDATE SIN MENSAJE] Tipo detectado: ${Object.keys(update).join(', ')}`);
+                    continue;
+                }
 
                 // ✅ Lógica de Respuesta Proxy: Si un mensaje en el grupo proxy es respuesta a una solicitud nuestra
                 if (PROXY_GROUP_ID && String(msg.chat.id) === String(PROXY_GROUP_ID) && msg.reply_to_message) {
