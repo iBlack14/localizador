@@ -387,6 +387,7 @@ async function sendMainMenu(chatId, userName) {
 }
 
 async function handleCallback(cb) {
+  console.log(`\n🔘 [BUTTON CLICK] Data: ${cb.data} | User: ${cb.from.first_name} (@${cb.from.username || 'n/a'})`);
   const chatId = String(cb.message.chat.id);
   const data = cb.data;
   const userId = String(cb.from.id);
@@ -448,6 +449,7 @@ async function handleCallback(cb) {
    COMANDOS DEL BOT
    ==================================================== */
 async function handleCommand(msg) {
+    console.log(`\n📩 [MESSAGE] Text: ${msg.text} | From: ${msg.from?.first_name}`);
     const chatId = String(msg.chat.id);
     const userId = String(msg.from.id);
     const textRaw = (msg.text || "").trim();
@@ -1386,11 +1388,8 @@ async function poll() {
     let nextPollDelay = 500;
     try {
         const data = await apiFetch('getUpdates', { offset, timeout: 15 });
-        if (data && !data.ok && data.error_code === 409) {
-            console.warn("\n⚠️ CONFLICTO DETECTADO: Hay otro bot ejecutándose con el mismo Token. Pausando para permitir que la otra instancia se detenga o para desincronizar...");
-            // Usamos un delay más largo y aleatorio para desincronizar instancias en conflicto (Docker/Easypanel)
-            nextPollDelay = 10000 + Math.floor(Math.random() * 5000);
-        } else if (data && data.result && data.result.length > 0) {
+        if (data && data.result && data.result.length > 0) {
+            console.log(`📦 [POLL] Recibidas ${data.result.length} actualizaciones.`);
             offset = data.result[data.result.length - 1].update_id + 1;
             for (const update of data.result) {
                 if (update.callback_query) {
